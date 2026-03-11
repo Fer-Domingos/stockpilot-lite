@@ -1,0 +1,60 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String
+  createdAt DateTime @default(now())
+
+  transactions InventoryTransaction[]
+}
+
+model Location {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+
+  transactions InventoryTransaction[]
+}
+
+model Material {
+  id          String   @id @default(cuid())
+  sku         String   @unique
+  name        String
+  unit        String
+  quantity    Int      @default(0)
+  minQuantity Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  transactions InventoryTransaction[]
+}
+
+model InventoryTransaction {
+  id          String            @id @default(cuid())
+  materialId  String
+  userId      String
+  locationId  String
+  type        TransactionType
+  quantity    Int
+  notes       String?
+  createdAt   DateTime          @default(now())
+
+  material Material @relation(fields: [materialId], references: [id])
+  user     User     @relation(fields: [userId], references: [id])
+  location Location @relation(fields: [locationId], references: [id])
+
+  @@index([materialId, createdAt])
+}
+
+enum TransactionType {
+  RECEIVE
+  ISSUE
+}
