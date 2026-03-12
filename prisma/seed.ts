@@ -8,6 +8,7 @@ async function main() {
       sku: 'PLY-3Q-001',
       name: '3/4" Birch Plywood',
       unit: 'sheet',
+      quantity: 24,
       minStock: 8,
       notes: 'Preferred vendor: Timber Source'
     },
@@ -15,6 +16,7 @@ async function main() {
       sku: 'HDF-1Q-002',
       name: '1/4" HDF Panel',
       unit: 'sheet',
+      quantity: 30,
       minStock: 10,
       notes: 'Typical lead time: 2 days'
     },
@@ -22,6 +24,7 @@ async function main() {
       sku: 'EDG-WHT-003',
       name: 'White Edge Banding',
       unit: 'roll',
+      quantity: 12,
       minStock: 4,
       notes: 'Store in dry area'
     }
@@ -39,6 +42,7 @@ async function main() {
       update: {
         name: material.name,
         unit: material.unit,
+        quantity: material.quantity,
         minStock: material.minStock,
         notes: material.notes
       },

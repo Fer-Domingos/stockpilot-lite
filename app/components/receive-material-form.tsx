@@ -2,11 +2,9 @@
 
 import { useMemo, useState } from 'react';
 
-import { receiveMaterial } from '@/app/actions';
-import { useDemoStore } from '@/lib/demo-store';
+import { JobRecord, MaterialRecord, receiveMaterial } from '@/app/actions';
 
-export function ReceiveMaterialForm() {
-  const { materials, jobs } = useDemoStore();
+export function ReceiveMaterialForm({ materials, jobs }: { materials: MaterialRecord[]; jobs: JobRecord[] }) {
   const [destinationType, setDestinationType] = useState<'SHOP' | 'JOB'>('SHOP');
   const isJobDestination = destinationType === 'JOB';
 

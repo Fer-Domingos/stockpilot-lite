@@ -4,7 +4,7 @@ import { useMemo, useState, useTransition } from 'react';
 
 import { MaterialRecord, createMaterial, deleteMaterial, updateMaterial } from '@/app/actions';
 
-type MaterialFormState = Omit<MaterialRecord, 'id'>;
+type MaterialFormState = Omit<MaterialRecord, 'id' | 'quantity'>;
 
 const emptyForm: MaterialFormState = {
   name: '',

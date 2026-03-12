@@ -7,28 +7,12 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  name      String
-  createdAt DateTime @default(now())
-
-  transactions InventoryTransaction[]
-}
-
-model Location {
-  id        String   @id @default(cuid())
-  name      String   @unique
-  createdAt DateTime @default(now())
-
-  transactions InventoryTransaction[]
-}
-
 model Material {
   id        String   @id @default(cuid())
   sku       String   @unique
   name      String
   unit      String
+  quantity  Int      @default(0)
   minStock  Int      @default(0)
   notes     String   @default("")
   createdAt DateTime @default(now())
@@ -44,26 +28,28 @@ model Job {
   status    String   @default("Open")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  transactions InventoryTransaction[]
 }
 
 model InventoryTransaction {
-  id         String          @id @default(cuid())
-  materialId String
-  userId     String
-  locationId String
-  type       TransactionType
-  quantity   Int
-  notes      String?
-  createdAt  DateTime        @default(now())
+  id           String                  @id @default(cuid())
+  materialId   String
+  jobId        String?
+  quantity     Int
+  type         InventoryTransactionType
+  locationFrom String?
+  locationTo   String?
+  createdAt    DateTime                @default(now())
 
   material Material @relation(fields: [materialId], references: [id])
-  user     User     @relation(fields: [userId], references: [id])
-  location Location @relation(fields: [locationId], references: [id])
+  job      Job?     @relation(fields: [jobId], references: [id])
 
   @@index([materialId, createdAt])
+  @@index([jobId, createdAt])
 }
 
-enum TransactionType {
+enum InventoryTransactionType {
   RECEIVE
-  ISSUE
+  TRANSFER
 }
