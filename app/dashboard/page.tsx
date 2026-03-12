@@ -1,5 +1,5 @@
 import { AppShell } from '@/app/components/app-shell';
-import { materials, summarizeInventory, transactions } from '@/lib/demo-data';
+import { getMaterialTotalQuantity, materials, summarizeInventory, transactions } from '@/lib/demo-data';
 import { getRole } from '@/lib/role';
 
 export default function DashboardPage({ searchParams }: { searchParams: { role?: string } }) {
@@ -66,17 +66,20 @@ export default function DashboardPage({ searchParams }: { searchParams: { role?:
           <h3>Inventory At-A-Glance</h3>
         </div>
         <div className="grid">
-          {materials.map((item) => (
-            <div className="status-row" key={item.id}>
-              <div>
-                <strong>{item.name}</strong>
-                <p className="muted">{item.sku}</p>
+          {materials.map((item) => {
+            const totalQuantity = getMaterialTotalQuantity(item);
+            return (
+              <div className="status-row" key={item.id}>
+                <div>
+                  <strong>{item.name}</strong>
+                  <p className="muted">{item.sku}</p>
+                </div>
+                <p className={totalQuantity <= item.minQuantity ? 'stock-badge low' : 'stock-badge'}>
+                  {totalQuantity} {item.unit}
+                </p>
               </div>
-              <p className={item.quantity <= item.minQuantity ? 'stock-badge low' : 'stock-badge'}>
-                {item.quantity} {item.unit}
-              </p>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </section>
     </AppShell>

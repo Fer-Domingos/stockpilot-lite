@@ -1,23 +1,33 @@
 export type AppRole = 'Admin' | 'Engineer / PM';
 
+export type Job = {
+  id: string;
+  number: string;
+  name: string;
+};
+
+export type InventoryLocation = {
+  id: string;
+  type: 'SHOP' | 'JOB';
+  name: string;
+  jobId?: string;
+};
+
+export type MaterialInventory = {
+  locationId: string;
+  quantity: number;
+};
+
 export type MaterialRow = {
   id: string;
   sku: string;
   name: string;
   category: string;
-  location: string;
-  quantity: number;
+  inventory: MaterialInventory[];
   unit: string;
   minQuantity: number;
   costPerUnit: number;
   supplier: string;
-};
-
-export type JobLocation = {
-  id: string;
-  code: string;
-  name: string;
-  stage: string;
 };
 
 export type TransactionRow = {
@@ -34,74 +44,99 @@ export type TransactionRow = {
   notes: string;
 };
 
-export const jobLocations: JobLocation[] = [
-  { id: 'job-aspen', code: 'J-24031', name: 'Aspen Residence', stage: 'Install' },
-  { id: 'job-bayside', code: 'J-24044', name: 'Bayside Condos', stage: 'Production' },
-  { id: 'job-creek', code: 'J-24051', name: 'Creekside Kitchen', stage: 'Cut List' }
+export const jobs: Job[] = [
+  { id: 'job-aspen', number: 'J-24031', name: 'Aspen Residence' },
+  { id: 'job-bayside', number: 'J-24044', name: 'Bayside Condos' },
+  { id: 'job-creek', number: 'J-24051', name: 'Creekside Kitchen' }
 ];
+
+export const inventoryLocations: InventoryLocation[] = [
+  { id: 'shop', type: 'SHOP', name: 'Shop' },
+  ...jobs.map((job) => ({
+    id: `loc-${job.id}`,
+    type: 'JOB' as const,
+    name: `${job.number} ${job.name}`,
+    jobId: job.id
+  }))
+];
+
+const shopLocationId = 'shop';
 
 export const materials: MaterialRow[] = [
   {
-    id: 'mat-1', sku: 'MDF-3/4-ARAUCO',
+    id: 'mat-1',
+    sku: 'MDF-3/4-ARAUCO',
     name: 'MDF 3/4 in 4x8 Arauco',
     category: 'Sheet Goods',
-    location: 'Shop',
-    quantity: 42,
+    inventory: [
+      { locationId: shopLocationId, quantity: 42 },
+      { locationId: 'loc-job-creek', quantity: 6 }
+    ],
     unit: 'Sheets',
     minQuantity: 20,
     costPerUnit: 43.75,
     supplier: 'Northwest Panels'
   },
   {
-    id: 'mat-2', sku: 'PLY-BB-3/4',
+    id: 'mat-2',
+    sku: 'PLY-BB-3/4',
     name: 'Baltic Birch 3/4 in 5x5',
     category: 'Sheet Goods',
-    location: 'Shop',
-    quantity: 16,
+    inventory: [
+      { locationId: shopLocationId, quantity: 16 },
+      { locationId: 'loc-job-aspen', quantity: 8 }
+    ],
     unit: 'Sheets',
     minQuantity: 18,
     costPerUnit: 71.2,
     supplier: 'Timber Source'
   },
   {
-    id: 'mat-3', sku: 'EB-PVC-WHT-23',
+    id: 'mat-3',
+    sku: 'EB-PVC-WHT-23',
     name: 'Edge Banding PVC White 23mm',
     category: 'Edgebanding',
-    location: 'Shop',
-    quantity: 29,
+    inventory: [{ locationId: shopLocationId, quantity: 29 }],
     unit: 'Rolls',
     minQuantity: 10,
     costPerUnit: 31.4,
     supplier: 'FastEdge Supply'
   },
   {
-    id: 'mat-4', sku: 'BLUM-TANDEM-18',
+    id: 'mat-4',
+    sku: 'BLUM-TANDEM-18',
     name: 'Blum Tandem Drawer Slides 18in',
     category: 'Hardware',
-    location: 'J-24044 Bayside Condos',
-    quantity: 56,
+    inventory: [
+      { locationId: shopLocationId, quantity: 12 },
+      { locationId: 'loc-job-bayside', quantity: 56 }
+    ],
     unit: 'Pairs',
     minQuantity: 24,
     costPerUnit: 19.8,
     supplier: 'Cabinet Hardware Direct'
   },
   {
-    id: 'mat-5', sku: 'SCREW-8X1-1/4',
+    id: 'mat-5',
+    sku: 'SCREW-8X1-1/4',
     name: 'Confirmat Screw 8x1-1/4',
     category: 'Fasteners',
-    location: 'J-24031 Aspen Residence',
-    quantity: 880,
+    inventory: [
+      { locationId: shopLocationId, quantity: 6200 },
+      { locationId: 'loc-job-aspen', quantity: 880 },
+      { locationId: 'loc-job-creek', quantity: 400 }
+    ],
     unit: 'Each',
     minQuantity: 500,
     costPerUnit: 0.09,
     supplier: 'Fixings Pro'
   },
   {
-    id: 'mat-6', sku: 'HPL-ANTHRACITE',
+    id: 'mat-6',
+    sku: 'HPL-ANTHRACITE',
     name: 'HPL Laminate Anthracite',
     category: 'Laminate',
-    location: 'Shop',
-    quantity: 7,
+    inventory: [{ locationId: shopLocationId, quantity: 7 }],
     unit: 'Sheets',
     minQuantity: 8,
     costPerUnit: 98.5,
@@ -182,15 +217,23 @@ export const rolePermissions: Record<AppRole, string> = {
   'Engineer / PM': 'Read-only KPI and reports visibility for planning and forecasting.'
 };
 
+export function getLocationName(locationId: string) {
+  return inventoryLocations.find((location) => location.id === locationId)?.name ?? locationId;
+}
+
+export function getMaterialTotalQuantity(material: MaterialRow) {
+  return material.inventory.reduce((sum, entry) => sum + entry.quantity, 0);
+}
+
 export function summarizeInventory() {
-  const lowStock = materials.filter((item) => item.quantity <= item.minQuantity).length;
+  const lowStock = materials.filter((item) => getMaterialTotalQuantity(item) <= item.minQuantity).length;
   const totalSku = materials.length;
-  const inventoryValue = materials.reduce((sum, item) => sum + item.quantity * item.costPerUnit, 0);
+  const inventoryValue = materials.reduce((sum, item) => sum + getMaterialTotalQuantity(item) * item.costPerUnit, 0);
 
   return {
     lowStock,
     totalSku,
     inventoryValue,
-    openJobs: jobLocations.length
+    openJobs: jobs.length
   };
 }

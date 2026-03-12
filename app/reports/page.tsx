@@ -1,5 +1,5 @@
 import { AppShell } from '@/app/components/app-shell';
-import { materials, transactions } from '@/lib/demo-data';
+import { getMaterialTotalQuantity, materials, transactions } from '@/lib/demo-data';
 import { getRole } from '@/lib/role';
 
 export default function ReportsPage({ searchParams }: { searchParams: { role?: string } }) {
@@ -44,12 +44,13 @@ export default function ReportsPage({ searchParams }: { searchParams: { role?: s
           </thead>
           <tbody>
             {materials.map((item) => {
-              const reorder = Math.max(item.minQuantity * 2 - item.quantity, 0);
+              const onHand = getMaterialTotalQuantity(item);
+              const reorder = Math.max(item.minQuantity * 2 - onHand, 0);
               return (
                 <tr key={item.id}>
                   <td>{item.sku}</td>
                   <td>{item.name}</td>
-                  <td>{item.quantity}</td>
+                  <td>{onHand}</td>
                   <td>{item.minQuantity}</td>
                   <td>{reorder === 0 ? 'Healthy' : `${reorder} ${item.unit}`}</td>
                 </tr>
