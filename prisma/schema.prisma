@@ -18,32 +18,75 @@ model Material {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  transactions InventoryTransaction[]
+  transactions   InventoryTransaction[]
+  receivingLogs  ReceivingRecord[]
+  jobAllocations JobMaterialStock[]
 }
 
 model Job {
-  id        String   @id @default(cuid())
-  number    String   @unique
+  id        String    @id @default(cuid())
+  number    String    @unique
   name      String
-  status    String   @default("Open")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  status    JobStatus @default(OPEN)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
-  transactions InventoryTransaction[]
+  transactions   InventoryTransaction[]
+  receivingLogs  ReceivingRecord[]
+  materialStocks JobMaterialStock[]
+}
+
+model JobMaterialStock {
+  id         String   @id @default(cuid())
+  jobId      String
+  materialId String
+  quantity   Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  job      Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  material Material @relation(fields: [materialId], references: [id], onDelete: Cascade)
+
+  @@unique([jobId, materialId])
+  @@index([materialId])
+}
+
+model ReceivingRecord {
+  id                 String               @id @default(cuid())
+  materialId         String
+  quantity           Int
+  destinationType    DestinationType
+  jobId              String?
+  invoiceNumber      String?
+  vendorName         String?
+  notes              String?
+  photoUrl           String?
+  receivedAt         DateTime
+  createdAt          DateTime             @default(now())
+  transaction        InventoryTransaction?
+
+  material Material @relation(fields: [materialId], references: [id])
+  job      Job?     @relation(fields: [jobId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([materialId, receivedAt])
+  @@index([jobId, receivedAt])
 }
 
 model InventoryTransaction {
-  id           String                  @id @default(cuid())
-  materialId   String
-  jobId        String?
-  quantity     Int
-  type         InventoryTransactionType
-  locationFrom String?
-  locationTo   String?
-  createdAt    DateTime                @default(now())
+  id               String                   @id @default(cuid())
+  materialId       String
+  jobId            String?
+  receivingRecordId String?                 @unique
+  quantity         Int
+  type             InventoryTransactionType
+  locationFrom     String?
+  locationTo       String?
+  createdAt        DateTime                 @default(now())
 
-  material Material @relation(fields: [materialId], references: [id])
-  job      Job?     @relation(fields: [jobId], references: [id])
+  material        Material       @relation(fields: [materialId], references: [id])
+  job             Job?           @relation(fields: [jobId], references: [id])
+  receivingRecord ReceivingRecord? @relation(fields: [receivingRecordId], references: [id], onDelete: SetNull)
 
   @@index([materialId, createdAt])
   @@index([jobId, createdAt])
@@ -52,4 +95,14 @@ model InventoryTransaction {
 enum InventoryTransactionType {
   RECEIVE
   TRANSFER
+}
+
+enum JobStatus {
+  OPEN
+  CLOSED
+}
+
+enum DestinationType {
+  SHOP
+  JOB
 }

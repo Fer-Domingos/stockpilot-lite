@@ -9,10 +9,10 @@ type JobFormState = Omit<JobRecord, 'id'>;
 const emptyForm: JobFormState = {
   number: '',
   name: '',
-  status: 'Open'
+  status: 'OPEN'
 };
 
-const statuses: JobStatus[] = ['Open', 'In Progress', 'On Hold', 'Completed'];
+const statuses: JobStatus[] = ['OPEN', 'CLOSED'];
 
 export function JobsManager({
   initialJobs
@@ -35,7 +35,7 @@ export function JobsManager({
     return {
       number: payload.number.trim(),
       name: payload.name.trim(),
-      status: statuses.includes(payload.status) ? payload.status : 'Open'
+      status: statuses.includes(payload.status) ? payload.status : 'OPEN'
     };
   }
 
@@ -120,7 +120,7 @@ export function JobsManager({
           >
             {statuses.map((status) => (
               <option key={status} value={status}>
-                {status}
+                {status === 'OPEN' ? 'Open' : 'Closed'}
               </option>
             ))}
           </select>
@@ -152,7 +152,7 @@ export function JobsManager({
               <tr key={job.id}>
                 <td>{job.number}</td>
                 <td>{job.name}</td>
-                <td>{job.status}</td>
+                <td>{job.status === 'OPEN' ? 'Open' : 'Closed'}</td>
                 <td>
                   <div className="row-actions">
                     <button
