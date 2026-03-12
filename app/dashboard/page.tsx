@@ -1,61 +1,84 @@
 import { AppShell } from '@/app/components/app-shell';
-import { prisma } from '@/lib/prisma';
+import { materials, summarizeInventory, transactions } from '@/lib/demo-data';
+import { getRole } from '@/lib/role';
 
-export const dynamic = 'force-dynamic';
-
-export default async function DashboardPage() {
-  const [materials, recentTransactions] = await Promise.all([
-    prisma.material.findMany({ orderBy: { name: 'asc' } }),
-    prisma.inventoryTransaction.findMany({
-      orderBy: { createdAt: 'desc' },
-      take: 5,
-      include: { material: true }
-    })
-  ]);
-
-  const totalItems = materials.reduce((acc, material) => acc + material.quantity, 0);
-  const lowStock = materials.filter((material) => material.quantity <= material.minQuantity).length;
+export default function DashboardPage({ searchParams }: { searchParams: { role?: string } }) {
+  const role = getRole(searchParams.role);
+  const summary = summarizeInventory();
 
   return (
-    <AppShell>
-      <h1>Dashboard</h1>
-      <div className="grid">
-        <div className="card">
-          <h3>Total Materials</h3>
-          <p>{materials.length}</p>
+    <AppShell role={role}>
+      <section className="kpi-grid">
+        <article className="card kpi-card">
+          <p className="muted">SKUs Tracked</p>
+          <h3>{summary.totalSku}</h3>
+        </article>
+        <article className="card kpi-card">
+          <p className="muted">Low Stock Alerts</p>
+          <h3>{summary.lowStock}</h3>
+        </article>
+        <article className="card kpi-card">
+          <p className="muted">Open Jobs</p>
+          <h3>{summary.openJobs}</h3>
+        </article>
+        <article className="card kpi-card">
+          <p className="muted">Inventory Value</p>
+          <h3>${summary.inventoryValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</h3>
+        </article>
+      </section>
+
+      <section className="card">
+        <div className="section-title">
+          <h3>Recent Transactions</h3>
         </div>
-        <div className="card">
-          <h3>Total Units on Hand</h3>
-          <p>{totalItems}</p>
-        </div>
-        <div className="card">
-          <h3>Low Stock Alerts</h3>
-          <p>{lowStock}</p>
-        </div>
-      </div>
-      <div className="card">
-        <h3>Recent Activity</h3>
         <table>
           <thead>
             <tr>
               <th>Date</th>
-              <th>Material</th>
               <th>Type</th>
+              <th>Material</th>
+              <th>Route</th>
               <th>Qty</th>
+              <th>User</th>
             </tr>
           </thead>
           <tbody>
-            {recentTransactions.map((entry) => (
+            {transactions.map((entry) => (
               <tr key={entry.id}>
-                <td>{entry.createdAt.toLocaleDateString()}</td>
-                <td>{entry.material.name}</td>
+                <td>{entry.date}</td>
                 <td>{entry.type}</td>
-                <td>{entry.quantity}</td>
+                <td>{entry.materialName}</td>
+                <td>
+                  {entry.from} → {entry.to}
+                </td>
+                <td>
+                  {entry.quantity} {entry.unit}
+                </td>
+                <td>{entry.user}</td>
               </tr>
             ))}
           </tbody>
         </table>
-      </div>
+      </section>
+
+      <section className="card">
+        <div className="section-title">
+          <h3>Inventory At-A-Glance</h3>
+        </div>
+        <div className="grid">
+          {materials.map((item) => (
+            <div className="status-row" key={item.id}>
+              <div>
+                <strong>{item.name}</strong>
+                <p className="muted">{item.sku}</p>
+              </div>
+              <p className={item.quantity <= item.minQuantity ? 'stock-badge low' : 'stock-badge'}>
+                {item.quantity} {item.unit}
+              </p>
+            </div>
+          ))}
+        </div>
+      </section>
     </AppShell>
   );
 }
