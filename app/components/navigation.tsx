@@ -38,10 +38,6 @@ export function Navigation() {
           );
         })}
       </nav>
-      <div className="sidebar-footer">
-        <p className="muted">Environment</p>
-        <p>Demo mode enabled</p>
-      </div>
     </aside>
   );
 }

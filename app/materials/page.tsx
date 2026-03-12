@@ -5,11 +5,11 @@ import { getRole } from '@/lib/role';
 
 export default async function MaterialsPage({ searchParams }: { searchParams: { role?: string } }) {
   const role = getRole(searchParams.role);
-  const { data, usingFallback } = await listMaterials();
+  const { data } = await listMaterials();
 
   return (
     <AppShell role={role}>
-      <MaterialsManager initialMaterials={data} usingFallback={usingFallback} />
+      <MaterialsManager initialMaterials={data} />
     </AppShell>
   );
 }

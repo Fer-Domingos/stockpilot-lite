@@ -15,11 +15,9 @@ const emptyForm: MaterialFormState = {
 };
 
 export function MaterialsManager({
-  initialMaterials,
-  usingFallback
+  initialMaterials
 }: {
   initialMaterials: MaterialRecord[];
-  usingFallback: boolean;
 }) {
   const [materials, setMaterials] = useState<MaterialRecord[]>(initialMaterials);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -62,9 +60,6 @@ export function MaterialsManager({
             </button>
           )}
         </div>
-        {usingFallback && (
-          <p className="muted">Database is unavailable. Displaying demo materials only; edits are disabled.</p>
-        )}
         {!!error && <p className="muted">{error}</p>}
         <form
           onSubmit={(event) => {
@@ -72,11 +67,6 @@ export function MaterialsManager({
             setError('');
 
             const normalizedForm = normalizeFormData(form);
-
-            if (usingFallback) {
-              setError('Material updates are disabled until the database connection is restored.');
-              return;
-            }
 
             startTransition(async () => {
               if (editingId) {
@@ -164,7 +154,7 @@ export function MaterialsManager({
             placeholder="Supplier details, substitutions, handling notes..."
           />
 
-          <button type="submit" disabled={isPending || usingFallback}>
+          <button type="submit" disabled={isPending}>
             {submitLabel}
           </button>
         </form>
@@ -201,7 +191,6 @@ export function MaterialsManager({
                     <button
                       className="secondary-button"
                       type="button"
-                      disabled={usingFallback}
                       onClick={() => {
                         setEditingId(material.id);
                         setForm({
@@ -218,7 +207,7 @@ export function MaterialsManager({
                     <button
                       className="danger-button"
                       type="button"
-                      disabled={usingFallback || isPending}
+                      disabled={isPending}
                       onClick={() => {
                         setError('');
 
