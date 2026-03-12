@@ -1,50 +1,59 @@
-import { PrismaClient, TransactionType } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
 async function main() {
-  const user = await prisma.user.upsert({
-    where: { email: 'manager@stockpilot.local' },
-    update: {},
-    create: {
-      email: 'manager@stockpilot.local',
-      name: 'Shop Manager'
-    }
-  });
-
-  const shop = await prisma.location.upsert({
-    where: { name: 'Shop' },
-    update: {},
-    create: { name: 'Shop' }
-  });
-
   const materials = [
-    { sku: 'PLY-3Q-001', name: '3/4" Birch Plywood', unit: 'sheet', quantity: 20, minQuantity: 8 },
-    { sku: 'HDF-1Q-002', name: '1/4" HDF Panel', unit: 'sheet', quantity: 35, minQuantity: 10 },
-    { sku: 'EDG-WHT-003', name: 'White Edge Banding', unit: 'roll', quantity: 12, minQuantity: 4 }
+    {
+      sku: 'PLY-3Q-001',
+      name: '3/4" Birch Plywood',
+      unit: 'sheet',
+      minStock: 8,
+      notes: 'Preferred vendor: Timber Source'
+    },
+    {
+      sku: 'HDF-1Q-002',
+      name: '1/4" HDF Panel',
+      unit: 'sheet',
+      minStock: 10,
+      notes: 'Typical lead time: 2 days'
+    },
+    {
+      sku: 'EDG-WHT-003',
+      name: 'White Edge Banding',
+      unit: 'roll',
+      minStock: 4,
+      notes: 'Store in dry area'
+    }
+  ];
+
+  const jobs = [
+    { number: 'J-24031', name: 'Aspen Residence', status: 'Open' },
+    { number: 'J-24044', name: 'Bayside Condos', status: 'In Progress' },
+    { number: 'J-24051', name: 'Creekside Kitchen', status: 'On Hold' }
   ];
 
   for (const material of materials) {
-    const upserted = await prisma.material.upsert({
+    await prisma.material.upsert({
       where: { sku: material.sku },
       update: {
         name: material.name,
         unit: material.unit,
-        quantity: material.quantity,
-        minQuantity: material.minQuantity
+        minStock: material.minStock,
+        notes: material.notes
       },
       create: material
     });
+  }
 
-    await prisma.inventoryTransaction.create({
-      data: {
-        materialId: upserted.id,
-        userId: user.id,
-        locationId: shop.id,
-        type: TransactionType.RECEIVE,
-        quantity: material.quantity,
-        notes: 'Initial seed stock'
-      }
+  for (const job of jobs) {
+    await prisma.job.upsert({
+      where: { number: job.number },
+      update: {
+        name: job.name,
+        status: job.status
+      },
+      create: job
     });
   }
 }

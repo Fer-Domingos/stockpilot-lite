@@ -1,10 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useTransition } from 'react';
 
-import { JobStatus, ManagedJob, useDemoStore } from '@/lib/demo-store';
+import { JobRecord, JobStatus, createJob, deleteJob, updateJob } from '@/app/actions';
 
-type JobFormState = Omit<ManagedJob, 'id'>;
+type JobFormState = Omit<JobRecord, 'id'>;
 
 const emptyForm: JobFormState = {
   number: '',
@@ -14,14 +14,31 @@ const emptyForm: JobFormState = {
 
 const statuses: JobStatus[] = ['Open', 'In Progress', 'On Hold', 'Completed'];
 
-export function JobsManager() {
-  const { jobs, addJob, updateJob, deleteJob } = useDemoStore();
+export function JobsManager({
+  initialJobs,
+  usingFallback
+}: {
+  initialJobs: JobRecord[];
+  usingFallback: boolean;
+}) {
+  const [jobs, setJobs] = useState<JobRecord[]>(initialJobs);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<JobFormState>(emptyForm);
+  const [error, setError] = useState('');
+  const [isPending, startTransition] = useTransition();
 
   function resetForm() {
     setEditingId(null);
     setForm(emptyForm);
+    setError('');
+  }
+
+  function normalizeJobForm(payload: JobFormState): JobFormState {
+    return {
+      number: payload.number.trim(),
+      name: payload.name.trim(),
+      status: statuses.includes(payload.status) ? payload.status : 'Open'
+    };
   }
 
   return (
@@ -35,15 +52,55 @@ export function JobsManager() {
             </button>
           )}
         </div>
+        {usingFallback && <p className="muted">Database is unavailable. Displaying demo jobs only; edits are disabled.</p>}
+        {!!error && <p className="muted">{error}</p>}
         <form
           onSubmit={(event) => {
             event.preventDefault();
-            if (editingId) {
-              updateJob(editingId, form);
-            } else {
-              addJob(form);
+            setError('');
+
+            const normalizedForm = normalizeJobForm(form);
+
+            if (usingFallback) {
+              setError('Job updates are disabled until the database connection is restored.');
+              return;
             }
-            resetForm();
+
+            startTransition(async () => {
+              if (editingId) {
+                const result = await updateJob(editingId, normalizedForm);
+
+                if (!result.ok) {
+                  setError(result.error ?? 'Failed to update job.');
+                  return;
+                }
+
+                if (!result.data) {
+                  setError('Job was updated but could not be loaded.');
+                  return;
+                }
+
+                const updatedJob = result.data;
+                setJobs((current) => current.map((job) => (job.id === editingId ? updatedJob : job)));
+              } else {
+                const result = await createJob(normalizedForm);
+
+                if (!result.ok) {
+                  setError(result.error ?? 'Failed to create job.');
+                  return;
+                }
+
+                if (!result.data) {
+                  setError('Job was created but could not be loaded.');
+                  return;
+                }
+
+                const createdJob = result.data;
+                setJobs((current) => [...current, createdJob]);
+              }
+
+              resetForm();
+            });
           }}
         >
           <label htmlFor="jobNumber">Job Number</label>
@@ -76,7 +133,9 @@ export function JobsManager() {
             ))}
           </select>
 
-          <button type="submit">{editingId ? 'Save Job' : 'Add Job'}</button>
+          <button type="submit" disabled={isPending || usingFallback}>
+            {isPending ? 'Saving...' : editingId ? 'Save Job' : 'Add Job'}
+          </button>
         </form>
       </section>
 
@@ -107,6 +166,7 @@ export function JobsManager() {
                     <button
                       className="secondary-button"
                       type="button"
+                      disabled={usingFallback}
                       onClick={() => {
                         setEditingId(job.id);
                         setForm({ number: job.number, name: job.name, status: job.status });
@@ -114,7 +174,24 @@ export function JobsManager() {
                     >
                       Edit
                     </button>
-                    <button className="danger-button" type="button" onClick={() => deleteJob(job.id)}>
+                    <button
+                      className="danger-button"
+                      type="button"
+                      disabled={isPending || usingFallback}
+                      onClick={() => {
+                        setError('');
+                        startTransition(async () => {
+                          const result = await deleteJob(job.id);
+
+                          if (!result.ok) {
+                            setError(result.error ?? 'Failed to delete job.');
+                            return;
+                          }
+
+                          setJobs((current) => current.filter((entry) => entry.id !== job.id));
+                        });
+                      }}
+                    >
                       Delete
                     </button>
                   </div>

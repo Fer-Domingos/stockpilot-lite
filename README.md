@@ -6,22 +6,24 @@ StockPilot Lite is a simple SaaS-style inventory management app for cabinet shop
 - Next.js (App Router)
 - TypeScript
 - Prisma
-- PostgreSQL
+- PostgreSQL (Neon-compatible)
 
 ## Features
 - Login screen
 - Dashboard overview
-- Materials catalog
-- Receive materials workflow
-- Issue materials workflow
+- Materials catalog (PostgreSQL)
+- Jobs catalog (PostgreSQL)
+- Receive materials workflow (demo logic)
+- Issue/transfer materials workflow (demo logic)
 - Transaction history
-- Seed data with default `Shop` location
+- Seed data for Materials and Jobs
 
 ## Data Models
 - `User`
-- `Material`
-- `InventoryTransaction`
 - `Location`
+- `Material`
+- `Job`
+- `InventoryTransaction`
 
 See `prisma/schema.prisma` for full schema.
 
@@ -30,26 +32,29 @@ See `prisma/schema.prisma` for full schema.
    ```bash
    npm install
    ```
-2. Copy env template:
+2. Copy env template and set your Neon connection string:
    ```bash
    cp .env.example .env
    ```
-3. Run migrations:
+   `DATABASE_URL="postgresql://..."`
+3. Generate Prisma client:
    ```bash
-   npx prisma migrate dev --name init
+   npm run prisma:generate
    ```
-4. Seed demo data:
+4. Run migration:
+   ```bash
+   npx prisma migrate dev --name materials-jobs-postgres
+   ```
+5. Seed Materials and Jobs:
    ```bash
    npm run prisma:seed
    ```
-5. Start app:
+6. Start app:
    ```bash
    npm run dev
    ```
 
 ## Build for Vercel
-This project is ready for Vercel deployment.
-
 Required environment variable:
 - `DATABASE_URL` (PostgreSQL)
 
