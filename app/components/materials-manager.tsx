@@ -1,10 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState, useTransition } from 'react';
 
-import { ManagedMaterial, useDemoStore } from '@/lib/demo-store';
+import { MaterialRecord, createMaterial, deleteMaterial, updateMaterial } from '@/app/actions';
 
-type MaterialFormState = Omit<ManagedMaterial, 'id'>;
+type MaterialFormState = Omit<MaterialRecord, 'id'>;
 
 const emptyForm: MaterialFormState = {
   name: '',
@@ -14,16 +14,41 @@ const emptyForm: MaterialFormState = {
   notes: ''
 };
 
-export function MaterialsManager() {
-  const { materials, addMaterial, updateMaterial, deleteMaterial } = useDemoStore();
+export function MaterialsManager({
+  initialMaterials,
+  usingFallback
+}: {
+  initialMaterials: MaterialRecord[];
+  usingFallback: boolean;
+}) {
+  const [materials, setMaterials] = useState<MaterialRecord[]>(initialMaterials);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<MaterialFormState>(emptyForm);
+  const [error, setError] = useState<string>('');
+  const [isPending, startTransition] = useTransition();
 
-  const submitLabel = editingId ? 'Save Material' : 'Create Material';
+  const submitLabel = useMemo(() => {
+    if (isPending) {
+      return editingId ? 'Saving...' : 'Creating...';
+    }
+
+    return editingId ? 'Save Material' : 'Create Material';
+  }, [editingId, isPending]);
 
   function resetForm() {
     setForm(emptyForm);
     setEditingId(null);
+    setError('');
+  }
+
+  function normalizeFormData(payload: MaterialFormState): MaterialFormState {
+    return {
+      name: payload.name.trim(),
+      sku: payload.sku.trim(),
+      unit: payload.unit.trim(),
+      minStock: Math.max(0, Math.floor(payload.minStock)),
+      notes: payload.notes.trim()
+    };
   }
 
   return (
@@ -37,15 +62,57 @@ export function MaterialsManager() {
             </button>
           )}
         </div>
+        {usingFallback && (
+          <p className="muted">Database is unavailable. Displaying demo materials only; edits are disabled.</p>
+        )}
+        {!!error && <p className="muted">{error}</p>}
         <form
           onSubmit={(event) => {
             event.preventDefault();
-            if (editingId) {
-              updateMaterial(editingId, form);
-            } else {
-              addMaterial(form);
+            setError('');
+
+            const normalizedForm = normalizeFormData(form);
+
+            if (usingFallback) {
+              setError('Material updates are disabled until the database connection is restored.');
+              return;
             }
-            resetForm();
+
+            startTransition(async () => {
+              if (editingId) {
+                const result = await updateMaterial(editingId, normalizedForm);
+                if (!result.ok) {
+                  setError(result.error ?? 'Failed to save material.');
+                  return;
+                }
+
+                if (!result.data) {
+                  setError('Material was updated but could not be loaded.');
+                  return;
+                }
+
+                const updatedMaterial = result.data;
+                setMaterials((current) =>
+                  current.map((material) => (material.id === editingId ? updatedMaterial : material))
+                );
+              } else {
+                const result = await createMaterial(normalizedForm);
+                if (!result.ok) {
+                  setError(result.error ?? 'Failed to create material.');
+                  return;
+                }
+
+                if (!result.data) {
+                  setError('Material was saved but could not be loaded.');
+                  return;
+                }
+
+                const createdMaterial = result.data;
+                setMaterials((current) => [...current, createdMaterial]);
+              }
+
+              resetForm();
+            });
           }}
         >
           <label htmlFor="materialName">Material Name</label>
@@ -97,7 +164,9 @@ export function MaterialsManager() {
             placeholder="Supplier details, substitutions, handling notes..."
           />
 
-          <button type="submit">{submitLabel}</button>
+          <button type="submit" disabled={isPending || usingFallback}>
+            {submitLabel}
+          </button>
         </form>
       </section>
 
@@ -132,6 +201,7 @@ export function MaterialsManager() {
                     <button
                       className="secondary-button"
                       type="button"
+                      disabled={usingFallback}
                       onClick={() => {
                         setEditingId(material.id);
                         setForm({
@@ -145,7 +215,25 @@ export function MaterialsManager() {
                     >
                       Edit
                     </button>
-                    <button className="danger-button" type="button" onClick={() => deleteMaterial(material.id)}>
+                    <button
+                      className="danger-button"
+                      type="button"
+                      disabled={usingFallback || isPending}
+                      onClick={() => {
+                        setError('');
+
+                        startTransition(async () => {
+                          const result = await deleteMaterial(material.id);
+
+                          if (!result.ok) {
+                            setError(result.error ?? 'Failed to delete material.');
+                            return;
+                          }
+
+                          setMaterials((current) => current.filter((entry) => entry.id !== material.id));
+                        });
+                      }}
+                    >
                       Delete
                     </button>
                   </div>

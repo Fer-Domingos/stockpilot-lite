@@ -25,27 +25,36 @@ model Location {
 }
 
 model Material {
-  id          String   @id @default(cuid())
-  sku         String   @unique
-  name        String
-  unit        String
-  quantity    Int      @default(0)
-  minQuantity Int      @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id        String   @id @default(cuid())
+  sku       String   @unique
+  name      String
+  unit      String
+  minStock  Int      @default(0)
+  notes     String   @default("")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   transactions InventoryTransaction[]
 }
 
+model Job {
+  id        String   @id @default(cuid())
+  number    String   @unique
+  name      String
+  status    String   @default("Open")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 model InventoryTransaction {
-  id          String            @id @default(cuid())
-  materialId  String
-  userId      String
-  locationId  String
-  type        TransactionType
-  quantity    Int
-  notes       String?
-  createdAt   DateTime          @default(now())
+  id         String          @id @default(cuid())
+  materialId String
+  userId     String
+  locationId String
+  type       TransactionType
+  quantity   Int
+  notes      String?
+  createdAt  DateTime        @default(now())
 
   material Material @relation(fields: [materialId], references: [id])
   user     User     @relation(fields: [userId], references: [id])
