@@ -1,6 +1,6 @@
 import { AppShell } from '@/app/components/app-shell';
 import { transferMaterial } from '@/app/actions';
-import { jobLocations, materials } from '@/lib/demo-data';
+import { jobs, materials } from '@/lib/demo-data';
 import { getRole } from '@/lib/role';
 
 export default function TransferMaterialsPage({ searchParams }: { searchParams: { role?: string } }) {
@@ -11,7 +11,7 @@ export default function TransferMaterialsPage({ searchParams }: { searchParams: 
       <section className="card">
         <div className="section-title">
           <h3>Transfer Materials</h3>
-          <p className="muted">Move stock between Shop and job inventories.</p>
+          <p className="muted">Supported: Shop → Job, Job → Shop, and Job → Job transfers.</p>
         </div>
         <form action={transferMaterial}>
           <label htmlFor="materialId">Material</label>
@@ -26,22 +26,30 @@ export default function TransferMaterialsPage({ searchParams }: { searchParams: 
 
           <label htmlFor="fromLocation">From</label>
           <select id="fromLocation" name="fromLocation" required>
-            <option value="SHOP">Shop General Inventory</option>
-            {jobLocations.map((job) => (
-              <option key={job.id} value={job.id}>
-                {job.code} — {job.name}
-              </option>
-            ))}
+            <optgroup label="Shop">
+              <option value="shop">Shop</option>
+            </optgroup>
+            <optgroup label="Jobs">
+              {jobs.map((job) => (
+                <option key={job.id} value={`loc-${job.id}`}>
+                  {job.number} — {job.name}
+                </option>
+              ))}
+            </optgroup>
           </select>
 
           <label htmlFor="toLocation">To</label>
           <select id="toLocation" name="toLocation" required>
-            <option value="SHOP">Shop General Inventory</option>
-            {jobLocations.map((job) => (
-              <option key={job.id} value={job.id}>
-                {job.code} — {job.name}
-              </option>
-            ))}
+            <optgroup label="Shop">
+              <option value="shop">Shop</option>
+            </optgroup>
+            <optgroup label="Jobs">
+              {jobs.map((job) => (
+                <option key={job.id} value={`loc-${job.id}`}>
+                  {job.number} — {job.name}
+                </option>
+              ))}
+            </optgroup>
           </select>
 
           <label htmlFor="quantity">Transfer Quantity</label>
