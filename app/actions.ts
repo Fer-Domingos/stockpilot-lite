@@ -3,7 +3,6 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 
-import { jobs as seedJobs, materials as seedMaterials } from '@/lib/demo-data';
 import { prisma } from '@/lib/prisma';
 
 export type MaterialRecord = {
@@ -34,26 +33,6 @@ type MaterialPayload = Omit<MaterialRecord, 'id'>;
 type JobPayload = Omit<JobRecord, 'id'>;
 
 const statuses: JobStatus[] = ['Open', 'In Progress', 'On Hold', 'Completed'];
-
-function getFallbackMaterials(): MaterialRecord[] {
-  return seedMaterials.map((material) => ({
-    id: material.id,
-    name: material.name,
-    sku: material.sku,
-    unit: material.unit,
-    minStock: material.minQuantity,
-    notes: material.supplier
-  }));
-}
-
-function getFallbackJobs(): JobRecord[] {
-  return seedJobs.map((job) => ({
-    id: job.id,
-    number: job.number,
-    name: job.name,
-    status: 'Open'
-  }));
-}
 
 function normalizeMaterialPayload(payload: MaterialPayload): MaterialPayload {
   return {
@@ -96,8 +75,8 @@ export async function listMaterials(): Promise<{ data: MaterialRecord[]; usingFa
     console.error('Failed to load materials from database:', error);
 
     return {
-      data: getFallbackMaterials(),
-      usingFallback: true
+      data: [],
+      usingFallback: false
     };
   }
 }
@@ -181,8 +160,8 @@ export async function listJobs(): Promise<{ data: JobRecord[]; usingFallback: bo
     console.error('Failed to load jobs from database:', error);
 
     return {
-      data: getFallbackJobs(),
-      usingFallback: true
+      data: [],
+      usingFallback: false
     };
   }
 }
