@@ -31,9 +31,9 @@ async function main() {
   ];
 
   const jobs = [
-    { number: 'J-24031', name: 'Aspen Residence', status: 'Open' },
-    { number: 'J-24044', name: 'Bayside Condos', status: 'In Progress' },
-    { number: 'J-24051', name: 'Creekside Kitchen', status: 'On Hold' }
+    { number: 'J-24031', name: 'Aspen Residence', status: 'OPEN' },
+    { number: 'J-24044', name: 'Bayside Condos', status: 'OPEN' },
+    { number: 'J-24051', name: 'Creekside Kitchen', status: 'CLOSED' }
   ];
 
   for (const material of materials) {

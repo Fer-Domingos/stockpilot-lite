@@ -11,18 +11,21 @@ export default async function HistoryPage({ searchParams }: { searchParams: { ro
       <section className="card">
         <div className="section-title">
           <h3>Transaction History</h3>
-          <p className="muted">Professional audit trail with realistic demo transaction data.</p>
+          <p className="muted">Database-backed receiving and transfer audit trail.</p>
         </div>
         <table>
           <thead>
             <tr>
               <th>Date</th>
               <th>Type</th>
+              <th>Invoice #</th>
               <th>SKU</th>
               <th>Material</th>
               <th>Qty</th>
-              <th>From</th>
-              <th>To</th>
+              <th>Destination</th>
+              <th>Vendor</th>
+              <th>Notes</th>
+              <th>Photo</th>
             </tr>
           </thead>
           <tbody>
@@ -30,13 +33,16 @@ export default async function HistoryPage({ searchParams }: { searchParams: { ro
               <tr key={entry.id}>
                 <td>{new Date(entry.createdAt).toLocaleString()}</td>
                 <td>{entry.type}</td>
+                <td>{entry.invoiceNumber}</td>
                 <td>{entry.materialSku}</td>
                 <td>{entry.materialName}</td>
                 <td>
                   {entry.quantity} {entry.unit}
                 </td>
-                <td>{entry.locationFrom}</td>
-                <td>{entry.locationTo}</td>
+                <td>{entry.destination}</td>
+                <td>{entry.vendorName}</td>
+                <td>{entry.notes}</td>
+                <td>{entry.hasPhoto ? 'Yes' : 'No'}</td>
               </tr>
             ))}
           </tbody>

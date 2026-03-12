@@ -15,7 +15,7 @@ export type MaterialRecord = {
   notes: string;
 };
 
-export type JobStatus = 'Open' | 'In Progress' | 'On Hold' | 'Completed';
+export type JobStatus = 'OPEN' | 'CLOSED';
 
 export type JobRecord = {
   id: string;
@@ -34,6 +34,11 @@ export type InventoryTransactionRecord = {
   unit: string;
   locationFrom: string;
   locationTo: string;
+  invoiceNumber: string;
+  destination: string;
+  vendorName: string;
+  notes: string;
+  hasPhoto: boolean;
 };
 
 type ActionResult<T = undefined> = {
@@ -45,7 +50,7 @@ type ActionResult<T = undefined> = {
 type MaterialPayload = Omit<MaterialRecord, 'id' | 'quantity'>;
 type JobPayload = Omit<JobRecord, 'id'>;
 
-const statuses: JobStatus[] = ['Open', 'In Progress', 'On Hold', 'Completed'];
+const statuses: JobStatus[] = ['OPEN', 'CLOSED'];
 
 function normalizeMaterialPayload(payload: MaterialPayload): MaterialPayload {
   return {
@@ -58,7 +63,7 @@ function normalizeMaterialPayload(payload: MaterialPayload): MaterialPayload {
 }
 
 function normalizeJobPayload(payload: JobPayload): JobPayload {
-  const status = statuses.includes(payload.status) ? payload.status : 'Open';
+  const status = statuses.includes(payload.status) ? payload.status : 'OPEN';
 
   return {
     number: payload.number.trim(),
@@ -178,7 +183,7 @@ export async function listJobs(): Promise<{ data: JobRecord[] }> {
         id: job.id,
         number: job.number,
         name: job.name,
-        status: statuses.includes(job.status as JobStatus) ? (job.status as JobStatus) : 'Open'
+        status: statuses.includes(job.status as JobStatus) ? (job.status as JobStatus) : 'OPEN'
       }))
     };
   } catch (error) {
@@ -201,7 +206,7 @@ export async function createJob(payload: JobPayload): Promise<ActionResult<JobRe
         id: created.id,
         number: created.number,
         name: created.name,
-        status: statuses.includes(created.status as JobStatus) ? (created.status as JobStatus) : 'Open'
+        status: statuses.includes(created.status as JobStatus) ? (created.status as JobStatus) : 'OPEN'
       }
     };
   } catch (error) {
@@ -224,7 +229,7 @@ export async function updateJob(id: string, payload: JobPayload): Promise<Action
         id: updated.id,
         number: updated.number,
         name: updated.name,
-        status: statuses.includes(updated.status as JobStatus) ? (updated.status as JobStatus) : 'Open'
+        status: statuses.includes(updated.status as JobStatus) ? (updated.status as JobStatus) : 'OPEN'
       }
     };
   } catch (error) {
@@ -246,20 +251,69 @@ export async function deleteJob(id: string): Promise<ActionResult> {
 
 export async function receiveMaterial(formData: FormData) {
   const materialId = String(formData.get('materialId') ?? '');
-  const destinationType = String(formData.get('destinationType') ?? 'SHOP');
+  const destinationType = String(formData.get('destinationType') ?? 'SHOP') as 'SHOP' | 'JOB';
   const jobId = String(formData.get('jobId') ?? '');
+  const invoiceNumber = String(formData.get('invoiceNumber') ?? '').trim();
+  const vendorName = String(formData.get('vendorName') ?? '').trim();
+  const notes = String(formData.get('notes') ?? '').trim();
+  const photoUrl = String(formData.get('photoUrl') ?? '').trim();
   const quantity = Number(formData.get('quantity') ?? 0);
 
-  if (!materialId || !Number.isFinite(quantity) || quantity <= 0) {
+  if (!materialId || !Number.isFinite(quantity) || quantity <= 0 || !['SHOP', 'JOB'].includes(destinationType)) {
+    redirect('/receive-materials');
+  }
+
+  if (destinationType === 'JOB' && !jobId) {
     redirect('/receive-materials');
   }
 
   const normalizedQuantity = Math.floor(quantity);
+  const receivedAt = new Date();
 
   await prisma.$transaction(async (tx) => {
-    await tx.material.update({
-      where: { id: materialId },
-      data: { quantity: { increment: normalizedQuantity } }
+    if (destinationType === 'SHOP') {
+      await tx.material.update({
+        where: { id: materialId },
+        data: { quantity: { increment: normalizedQuantity } }
+      });
+    }
+
+    if (destinationType === 'JOB' && jobId) {
+      const job = await tx.job.findUnique({ where: { id: jobId } });
+      if (!job || job.status !== 'OPEN') {
+        throw new Error('Destination job must be open.');
+      }
+
+      await tx.jobMaterialStock.upsert({
+        where: {
+          jobId_materialId: {
+            jobId,
+            materialId
+          }
+        },
+        update: {
+          quantity: { increment: normalizedQuantity }
+        },
+        create: {
+          jobId,
+          materialId,
+          quantity: normalizedQuantity
+        }
+      });
+    }
+
+    const receivingRecord = await tx.receivingRecord.create({
+      data: {
+        materialId,
+        quantity: normalizedQuantity,
+        destinationType,
+        jobId: destinationType === 'JOB' && jobId ? jobId : null,
+        invoiceNumber: invoiceNumber || null,
+        vendorName: vendorName || null,
+        notes: notes || null,
+        photoUrl: photoUrl || null,
+        receivedAt
+      }
     });
 
     const locationTo = destinationType === 'JOB' && jobId ? `loc-${jobId}` : 'shop';
@@ -270,7 +324,9 @@ export async function receiveMaterial(formData: FormData) {
         quantity: normalizedQuantity,
         type: 'RECEIVE',
         locationFrom: null,
-        locationTo
+        locationTo,
+        receivingRecordId: receivingRecord.id,
+        createdAt: receivedAt
       }
     });
   });
@@ -331,7 +387,12 @@ export async function listInventoryTransactions(): Promise<{ data: InventoryTran
       listJobs(),
       prisma.inventoryTransaction.findMany({
         include: {
-          material: true
+          material: true,
+          receivingRecord: {
+            include: {
+              job: true
+            }
+          }
         },
         orderBy: { createdAt: 'desc' }
       })
@@ -340,17 +401,33 @@ export async function listInventoryTransactions(): Promise<{ data: InventoryTran
     const jobsById = new Map(jobsResult.data.map((job) => [job.id, job]));
 
     return {
-      data: transactions.map((entry) => ({
-        id: entry.id,
-        createdAt: entry.createdAt.toISOString(),
-        type: entry.type,
-        materialSku: entry.material.sku,
-        materialName: entry.material.name,
-        quantity: entry.quantity,
-        unit: entry.material.unit,
-        locationFrom: entry.locationFrom ? formatLocationLabel(entry.locationFrom, jobsById) : 'Vendor',
-        locationTo: entry.locationTo ? formatLocationLabel(entry.locationTo, jobsById) : 'N/A'
-      }))
+      data: transactions.map((entry) => {
+        const destination =
+          entry.receivingRecord?.destinationType === 'JOB' && entry.receivingRecord.job
+            ? `${entry.receivingRecord.job.number} — ${entry.receivingRecord.job.name}`
+            : entry.receivingRecord?.destinationType === 'SHOP'
+              ? 'Shop'
+              : entry.locationTo
+                ? formatLocationLabel(entry.locationTo, jobsById)
+                : 'N/A';
+
+        return {
+          id: entry.id,
+          createdAt: entry.createdAt.toISOString(),
+          type: entry.type,
+          materialSku: entry.material.sku,
+          materialName: entry.material.name,
+          quantity: entry.quantity,
+          unit: entry.material.unit,
+          locationFrom: entry.locationFrom ? formatLocationLabel(entry.locationFrom, jobsById) : 'Vendor',
+          locationTo: entry.locationTo ? formatLocationLabel(entry.locationTo, jobsById) : 'N/A',
+          invoiceNumber: entry.receivingRecord?.invoiceNumber ?? '—',
+          destination,
+          vendorName: entry.receivingRecord?.vendorName ?? '—',
+          notes: entry.receivingRecord?.notes ?? '—',
+          hasPhoto: Boolean(entry.receivingRecord?.photoUrl)
+        };
+      })
     };
   } catch (error) {
     console.error('Failed to load inventory history:', error);

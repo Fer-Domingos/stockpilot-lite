@@ -10,7 +10,7 @@ export function ReceiveMaterialForm({ materials, jobs }: { materials: MaterialRe
 
   const destinationHint = useMemo(() => {
     if (isJobDestination) {
-      return 'Post directly into a specific job inventory location.';
+      return 'Post directly into an open job inventory allocation.';
     }
 
     return 'Post into Shop general inventory.';
@@ -44,9 +44,9 @@ export function ReceiveMaterialForm({ materials, jobs }: { materials: MaterialRe
 
       {isJobDestination && (
         <>
-          <label htmlFor="jobId">Destination Job</label>
+          <label htmlFor="jobId">Destination Job (Open Only)</label>
           <select id="jobId" name="jobId" required>
-            <option value="">Select job</option>
+            <option value="">Select open job</option>
             {jobs.map((job) => (
               <option key={job.id} value={job.id}>
                 {job.number} — {job.name}
@@ -58,12 +58,22 @@ export function ReceiveMaterialForm({ materials, jobs }: { materials: MaterialRe
 
       {!isJobDestination && <input type="hidden" name="jobId" value="" />}
 
+      <label htmlFor="invoiceNumber">Invoice Number</label>
+      <input id="invoiceNumber" name="invoiceNumber" placeholder="INV-100245" />
+
+      <label htmlFor="vendorName">Vendor / Supplier</label>
+      <input id="vendorName" name="vendorName" placeholder="Northwest Plywood Supply" />
+
+      <label htmlFor="notes">Receiving Notes</label>
+      <textarea id="notes" name="notes" rows={3} placeholder="Condition, PO references, discrepancies..." />
+
+      <label htmlFor="photoUrl">Photo URL (optional placeholder for upload)</label>
+      <input id="photoUrl" name="photoUrl" type="url" placeholder="https://example.com/invoice-photo.jpg" />
+
       <label htmlFor="quantity">Quantity Received</label>
       <input id="quantity" name="quantity" type="number" min="1" required />
 
-      <label htmlFor="notes">Receiving Notes</label>
-      <textarea id="notes" name="notes" rows={3} placeholder="PO, supplier, condition notes..." />
-      <button type="submit">Post Receipt (Demo)</button>
+      <button type="submit">Post Receipt</button>
     </form>
   );
 }
