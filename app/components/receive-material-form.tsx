@@ -3,9 +3,10 @@
 import { useMemo, useState } from 'react';
 
 import { receiveMaterial } from '@/app/actions';
-import { jobs, materials } from '@/lib/demo-data';
+import { useDemoStore } from '@/lib/demo-store';
 
 export function ReceiveMaterialForm() {
+  const { materials, jobs } = useDemoStore();
   const [destinationType, setDestinationType] = useState<'SHOP' | 'JOB'>('SHOP');
   const isJobDestination = destinationType === 'JOB';
 
