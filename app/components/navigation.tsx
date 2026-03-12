@@ -1,24 +1,46 @@
+'use client';
+
 import Link from 'next/link';
+import { usePathname, useSearchParams } from 'next/navigation';
 
 const links = [
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/materials', label: 'Materials' },
   { href: '/receive-materials', label: 'Receive Materials' },
-  { href: '/issue-materials', label: 'Issue Materials' },
-  { href: '/history', label: 'History' }
-];
+  { href: '/transfer-materials', label: 'Transfer Materials' },
+  { href: '/history', label: 'History' },
+  { href: '/reports', label: 'Reports' }
+] as const;
 
 export function Navigation() {
+  const pathname = usePathname();
+  const params = useSearchParams();
+  const role = params.get('role') ?? 'Admin';
+
   return (
     <aside className="sidebar">
-      <h2>StockPilot Lite</h2>
+      <div className="brand">
+        <p className="brand-kicker">StockPilot</p>
+        <h2>Cabinet Inventory</h2>
+      </div>
       <nav>
-        {links.map((link) => (
-          <Link key={link.href} href={link.href}>
-            {link.label}
-          </Link>
-        ))}
+        {links.map((link) => {
+          const active = pathname === link.href;
+          return (
+            <Link
+              className={active ? 'active' : ''}
+              key={link.href}
+              href={{ pathname: link.href, query: { role } }}
+            >
+              {link.label}
+            </Link>
+          );
+        })}
       </nav>
+      <div className="sidebar-footer">
+        <p className="muted">Environment</p>
+        <p>Demo mode enabled</p>
+      </div>
     </aside>
   );
 }

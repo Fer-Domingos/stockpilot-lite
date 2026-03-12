@@ -1,49 +1,50 @@
 import { AppShell } from '@/app/components/app-shell';
-import { prisma } from '@/lib/prisma';
+import { transactions } from '@/lib/demo-data';
+import { getRole } from '@/lib/role';
 
-export const dynamic = 'force-dynamic';
-
-export default async function HistoryPage() {
-  const history = await prisma.inventoryTransaction.findMany({
-    orderBy: { createdAt: 'desc' },
-    include: {
-      material: true,
-      user: true,
-      location: true
-    }
-  });
+export default function HistoryPage({ searchParams }: { searchParams: { role?: string } }) {
+  const role = getRole(searchParams.role);
 
   return (
-    <AppShell>
-      <h1>History</h1>
-      <div className="card">
+    <AppShell role={role}>
+      <section className="card">
+        <div className="section-title">
+          <h3>Transaction History</h3>
+          <p className="muted">Professional audit trail with realistic demo transaction data.</p>
+        </div>
         <table>
           <thead>
             <tr>
               <th>Date</th>
               <th>Type</th>
+              <th>SKU</th>
               <th>Material</th>
-              <th>Quantity</th>
-              <th>Location</th>
+              <th>Qty</th>
+              <th>From</th>
+              <th>To</th>
               <th>User</th>
               <th>Notes</th>
             </tr>
           </thead>
           <tbody>
-            {history.map((entry) => (
+            {transactions.map((entry) => (
               <tr key={entry.id}>
-                <td>{entry.createdAt.toLocaleString()}</td>
+                <td>{entry.date}</td>
                 <td>{entry.type}</td>
-                <td>{entry.material.name}</td>
-                <td>{entry.quantity}</td>
-                <td>{entry.location.name}</td>
-                <td>{entry.user.name}</td>
-                <td>{entry.notes ?? '-'}</td>
+                <td>{entry.materialSku}</td>
+                <td>{entry.materialName}</td>
+                <td>
+                  {entry.quantity} {entry.unit}
+                </td>
+                <td>{entry.from}</td>
+                <td>{entry.to}</td>
+                <td>{entry.user}</td>
+                <td>{entry.notes}</td>
               </tr>
             ))}
           </tbody>
         </table>
-      </div>
+      </section>
     </AppShell>
   );
 }

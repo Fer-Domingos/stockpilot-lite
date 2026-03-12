@@ -1,36 +1,27 @@
 import { AppShell } from '@/app/components/app-shell';
-import { createMaterial } from '@/app/actions';
-import { prisma } from '@/lib/prisma';
+import { materials } from '@/lib/demo-data';
+import { getRole } from '@/lib/role';
 
-export const dynamic = 'force-dynamic';
-
-export default async function MaterialsPage() {
-  const materials = await prisma.material.findMany({ orderBy: { name: 'asc' } });
+export default function MaterialsPage({ searchParams }: { searchParams: { role?: string } }) {
+  const role = getRole(searchParams.role);
 
   return (
-    <AppShell>
-      <h1>Materials</h1>
-      <div className="card">
-        <h3>Add Material</h3>
-        <form action={createMaterial}>
-          <input name="sku" placeholder="SKU" required />
-          <input name="name" placeholder="Material name" required />
-          <input name="unit" placeholder="Unit (sheet, roll...)" required />
-          <input name="minQuantity" type="number" min="0" placeholder="Min quantity" required />
-          <button type="submit">Add Material</button>
-        </form>
-      </div>
-
-      <div className="card">
-        <h3>Current Inventory</h3>
+    <AppShell role={role}>
+      <section className="card">
+        <div className="section-title">
+          <h3>Materials Master</h3>
+          <p className="muted">Realistic demo inventory across Shop and active Jobs.</p>
+        </div>
         <table>
           <thead>
             <tr>
               <th>SKU</th>
-              <th>Name</th>
-              <th>Unit</th>
+              <th>Material</th>
+              <th>Category</th>
+              <th>Location</th>
               <th>On Hand</th>
               <th>Min</th>
+              <th>Supplier</th>
             </tr>
           </thead>
           <tbody>
@@ -38,14 +29,18 @@ export default async function MaterialsPage() {
               <tr key={material.id}>
                 <td>{material.sku}</td>
                 <td>{material.name}</td>
-                <td>{material.unit}</td>
-                <td>{material.quantity}</td>
+                <td>{material.category}</td>
+                <td>{material.location}</td>
+                <td>
+                  {material.quantity} {material.unit}
+                </td>
                 <td>{material.minQuantity}</td>
+                <td>{material.supplier}</td>
               </tr>
             ))}
           </tbody>
         </table>
-      </div>
+      </section>
     </AppShell>
   );
 }
