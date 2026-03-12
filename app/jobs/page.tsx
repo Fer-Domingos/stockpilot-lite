@@ -5,11 +5,11 @@ import { getRole } from '@/lib/role';
 
 export default async function JobsPage({ searchParams }: { searchParams: { role?: string } }) {
   const role = getRole(searchParams.role);
-  const { data, usingFallback } = await listJobs();
+  const { data } = await listJobs();
 
   return (
     <AppShell role={role}>
-      <JobsManager initialJobs={data} usingFallback={usingFallback} />
+      <JobsManager initialJobs={data} />
     </AppShell>
   );
 }

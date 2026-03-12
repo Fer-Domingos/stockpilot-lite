@@ -54,7 +54,7 @@ function normalizeJobPayload(payload: JobPayload): JobPayload {
   };
 }
 
-export async function listMaterials(): Promise<{ data: MaterialRecord[]; usingFallback: boolean }> {
+export async function listMaterials(): Promise<{ data: MaterialRecord[] }> {
   try {
     const materials = await prisma.material.findMany({
       orderBy: { createdAt: 'asc' }
@@ -68,16 +68,12 @@ export async function listMaterials(): Promise<{ data: MaterialRecord[]; usingFa
         unit: material.unit,
         minStock: material.minStock,
         notes: material.notes
-      })),
-      usingFallback: false
+      }))
     };
   } catch (error) {
     console.error('Failed to load materials from database:', error);
 
-    return {
-      data: [],
-      usingFallback: false
-    };
+    return { data: [] };
   }
 }
 
@@ -141,7 +137,7 @@ export async function deleteMaterial(id: string): Promise<ActionResult> {
   }
 }
 
-export async function listJobs(): Promise<{ data: JobRecord[]; usingFallback: boolean }> {
+export async function listJobs(): Promise<{ data: JobRecord[] }> {
   try {
     const jobs = await prisma.job.findMany({
       orderBy: { createdAt: 'asc' }
@@ -153,16 +149,12 @@ export async function listJobs(): Promise<{ data: JobRecord[]; usingFallback: bo
         number: job.number,
         name: job.name,
         status: statuses.includes(job.status as JobStatus) ? (job.status as JobStatus) : 'Open'
-      })),
-      usingFallback: false
+      }))
     };
   } catch (error) {
     console.error('Failed to load jobs from database:', error);
 
-    return {
-      data: [],
-      usingFallback: false
-    };
+    return { data: [] };
   }
 }
 

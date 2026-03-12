@@ -15,11 +15,9 @@ const emptyForm: JobFormState = {
 const statuses: JobStatus[] = ['Open', 'In Progress', 'On Hold', 'Completed'];
 
 export function JobsManager({
-  initialJobs,
-  usingFallback
+  initialJobs
 }: {
   initialJobs: JobRecord[];
-  usingFallback: boolean;
 }) {
   const [jobs, setJobs] = useState<JobRecord[]>(initialJobs);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -52,7 +50,6 @@ export function JobsManager({
             </button>
           )}
         </div>
-        {usingFallback && <p className="muted">Database is unavailable. Displaying demo jobs only; edits are disabled.</p>}
         {!!error && <p className="muted">{error}</p>}
         <form
           onSubmit={(event) => {
@@ -60,11 +57,6 @@ export function JobsManager({
             setError('');
 
             const normalizedForm = normalizeJobForm(form);
-
-            if (usingFallback) {
-              setError('Job updates are disabled until the database connection is restored.');
-              return;
-            }
 
             startTransition(async () => {
               if (editingId) {
@@ -133,7 +125,7 @@ export function JobsManager({
             ))}
           </select>
 
-          <button type="submit" disabled={isPending || usingFallback}>
+          <button type="submit" disabled={isPending}>
             {isPending ? 'Saving...' : editingId ? 'Save Job' : 'Add Job'}
           </button>
         </form>
@@ -166,7 +158,6 @@ export function JobsManager({
                     <button
                       className="secondary-button"
                       type="button"
-                      disabled={usingFallback}
                       onClick={() => {
                         setEditingId(job.id);
                         setForm({ number: job.number, name: job.name, status: job.status });
@@ -177,7 +168,7 @@ export function JobsManager({
                     <button
                       className="danger-button"
                       type="button"
-                      disabled={isPending || usingFallback}
+                      disabled={isPending}
                       onClick={() => {
                         setError('');
                         startTransition(async () => {
