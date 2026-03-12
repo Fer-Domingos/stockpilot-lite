@@ -1,11 +1,8 @@
 'use client';
 
-import { transferMaterial } from '@/app/actions';
-import { useDemoStore } from '@/lib/demo-store';
+import { JobRecord, MaterialRecord, transferMaterial } from '@/app/actions';
 
-export function TransferMaterialForm() {
-  const { jobs, materials } = useDemoStore();
-
+export function TransferMaterialForm({ materials, jobs }: { materials: MaterialRecord[]; jobs: JobRecord[] }) {
   return (
     <form action={transferMaterial}>
       <label htmlFor="materialId">Material</label>

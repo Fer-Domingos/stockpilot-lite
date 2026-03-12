@@ -1,9 +1,10 @@
 import { AppShell } from '@/app/components/app-shell';
-import { transactions } from '@/lib/demo-data';
+import { listInventoryTransactions } from '@/app/actions';
 import { getRole } from '@/lib/role';
 
-export default function HistoryPage({ searchParams }: { searchParams: { role?: string } }) {
+export default async function HistoryPage({ searchParams }: { searchParams: { role?: string } }) {
   const role = getRole(searchParams.role);
+  const { data: transactions } = await listInventoryTransactions();
 
   return (
     <AppShell role={role}>
@@ -22,24 +23,20 @@ export default function HistoryPage({ searchParams }: { searchParams: { role?: s
               <th>Qty</th>
               <th>From</th>
               <th>To</th>
-              <th>User</th>
-              <th>Notes</th>
             </tr>
           </thead>
           <tbody>
             {transactions.map((entry) => (
               <tr key={entry.id}>
-                <td>{entry.date}</td>
+                <td>{new Date(entry.createdAt).toLocaleString()}</td>
                 <td>{entry.type}</td>
                 <td>{entry.materialSku}</td>
                 <td>{entry.materialName}</td>
                 <td>
                   {entry.quantity} {entry.unit}
                 </td>
-                <td>{entry.from}</td>
-                <td>{entry.to}</td>
-                <td>{entry.user}</td>
-                <td>{entry.notes}</td>
+                <td>{entry.locationFrom}</td>
+                <td>{entry.locationTo}</td>
               </tr>
             ))}
           </tbody>
