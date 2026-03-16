@@ -187,17 +187,28 @@ async function adjustInventoryBalance(
 
 async function syncMaterialQuantitiesFromBalances() {
   const materials = await prisma.material.findMany({
-    include: {
-      balances: true
+    select: {
+      id: true
     }
   });
+
+  if (materials.length === 0) {
+    return;
+  }
+
+  const balanceSums = await prisma.inventoryBalance.groupBy({
+    by: ['materialId'],
+    _sum: { quantity: true }
+  });
+
+  const quantityByMaterialId = new Map(balanceSums.map((entry) => [entry.materialId, entry._sum.quantity ?? 0]));
 
   await prisma.$transaction(
     materials.map((material) =>
       prisma.material.update({
         where: { id: material.id },
         data: {
-          quantity: material.balances.reduce((sum, balance) => sum + balance.quantity, 0)
+          quantity: quantityByMaterialId.get(material.id) ?? 0
         }
       })
     )
@@ -207,9 +218,30 @@ async function syncMaterialQuantitiesFromBalances() {
 export async function listMaterials(): Promise<{ data: MaterialRecord[] }> {
   try {
     const materials = await prisma.material.findMany({
-      include: { balances: true },
+      select: {
+        id: true,
+        name: true,
+        sku: true,
+        unit: true,
+        minStock: true,
+        notes: true
+      },
       orderBy: { createdAt: 'asc' }
     });
+
+    if (materials.length === 0) {
+      return { data: [] };
+    }
+
+    const balanceSums = await prisma.inventoryBalance.groupBy({
+      by: ['materialId'],
+      _sum: { quantity: true },
+      where: {
+        materialId: { in: materials.map((material) => material.id) }
+      }
+    });
+
+    const quantityByMaterialId = new Map(balanceSums.map((entry) => [entry.materialId, entry._sum.quantity ?? 0]));
 
     return {
       data: materials.map((material) => ({
@@ -217,7 +249,7 @@ export async function listMaterials(): Promise<{ data: MaterialRecord[] }> {
         name: material.name,
         sku: material.sku,
         unit: material.unit,
-        quantity: material.balances.reduce((sum, balance) => sum + balance.quantity, 0),
+        quantity: quantityByMaterialId.get(material.id) ?? 0,
         minStock: material.minStock,
         notes: material.notes
       }))
@@ -592,23 +624,57 @@ export async function issueMaterial(formData: FormData) {
 export async function listInventoryBalances(): Promise<{ data: InventoryBalanceView[] }> {
   try {
     const materials = await prisma.material.findMany({
-      include: {
-        balances: {
-          include: {
-            job: true
-          }
-        }
+      select: {
+        id: true,
+        sku: true,
+        name: true,
+        unit: true,
+        minStock: true
       },
       orderBy: { name: 'asc' }
     });
 
+    if (materials.length === 0) {
+      return { data: [] };
+    }
+
+    const balances = await prisma.inventoryBalance.findMany({
+      where: {
+        materialId: { in: materials.map((material) => material.id) }
+      },
+      select: {
+        materialId: true,
+        locationType: true,
+        jobId: true,
+        quantity: true,
+        job: {
+          select: {
+            number: true,
+            name: true
+          }
+        }
+      }
+    });
+
+    const balancesByMaterialId = new Map<string, typeof balances>();
+
+    for (const balance of balances) {
+      const existing = balancesByMaterialId.get(balance.materialId);
+      if (existing) {
+        existing.push(balance);
+      } else {
+        balancesByMaterialId.set(balance.materialId, [balance]);
+      }
+    }
+
     return {
       data: materials.map((material) => {
-        const totalQuantity = material.balances.reduce((sum, balance) => sum + balance.quantity, 0);
-        const shopQuantity = material.balances
+        const materialBalances = balancesByMaterialId.get(material.id) ?? [];
+        const totalQuantity = materialBalances.reduce((sum, balance) => sum + balance.quantity, 0);
+        const shopQuantity = materialBalances
           .filter((balance) => balance.locationType === 'SHOP')
           .reduce((sum, balance) => sum + balance.quantity, 0);
-        const jobQuantities = material.balances
+        const jobQuantities = materialBalances
           .filter((balance) => balance.locationType === 'JOB' && balance.job)
           .map((balance) => ({
             jobId: balance.jobId as string,
@@ -673,12 +739,19 @@ export async function listInventoryTransactions(): Promise<{ data: InventoryTran
 }
 
 export async function getDashboardData(): Promise<DashboardView> {
-  const [totalSku, openJobs, onHandAggregate, materialsWithBalances, balances, txns] = await Promise.all([
+  const [totalSku, openJobs, onHandAggregate, materials, balanceSums, balances, txns] = await Promise.all([
     prisma.material.count(),
     prisma.job.count({ where: { status: 'OPEN' } }),
     prisma.inventoryBalance.aggregate({ _sum: { quantity: true } }),
     prisma.material.findMany({
-      include: { balances: true }
+      select: {
+        id: true,
+        minStock: true
+      }
+    }),
+    prisma.inventoryBalance.groupBy({
+      by: ['materialId'],
+      _sum: { quantity: true }
     }),
     prisma.inventoryBalance.findMany({
       include: {
@@ -690,10 +763,9 @@ export async function getDashboardData(): Promise<DashboardView> {
     listInventoryTransactions()
   ]);
 
-  const lowStock = materialsWithBalances.filter((material) => {
-    const onHand = material.balances.reduce((sum, balance) => sum + balance.quantity, 0);
-    return onHand < material.minStock;
-  }).length;
+  const quantityByMaterialId = new Map(balanceSums.map((entry) => [entry.materialId, entry._sum.quantity ?? 0]));
+
+  const lowStock = materials.filter((material) => (quantityByMaterialId.get(material.id) ?? 0) < material.minStock).length;
 
   const inventoryRows: InventoryAtGlanceRow[] = balances.map((balance) => ({
     id: balance.id,
