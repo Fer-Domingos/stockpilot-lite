@@ -97,6 +97,40 @@ function normalizeMaterialPayload(payload: MaterialPayload): MaterialPayload {
   };
 }
 
+function validateMaterialPayload(payload: MaterialPayload): ActionResult<MaterialRecord> {
+  if (!payload.name.trim()) {
+    return { ok: false, error: 'Material name is required.' };
+  }
+
+  if (!payload.sku.trim()) {
+    return { ok: false, error: 'SKU is required.' };
+  }
+
+  if (!payload.unit.trim()) {
+    return { ok: false, error: 'Unit is required.' };
+  }
+
+  if (!Number.isFinite(payload.minStock) || payload.minStock < 0) {
+    return { ok: false, error: 'Minimum stock must be a non-negative number.' };
+  }
+
+  return { ok: true };
+}
+
+function formatMaterialMutationError(error: unknown): string {
+  if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    if (error.code === 'P2002') {
+      return 'A material with this SKU already exists.';
+    }
+
+    if (error.code === 'P2022') {
+      return 'Materials table is out of date. Run the latest Prisma migrations and try again.';
+    }
+  }
+
+  return 'Unable to save material right now.';
+}
+
 function normalizeJobPayload(payload: JobPayload): JobPayload {
   const status = statuses.includes(payload.status) ? payload.status : 'OPEN';
 
@@ -262,9 +296,22 @@ export async function listMaterials(): Promise<{ data: MaterialRecord[] }> {
 }
 
 export async function createMaterial(payload: MaterialPayload): Promise<ActionResult<MaterialRecord>> {
+  const validation = validateMaterialPayload(payload);
+  if (!validation.ok) {
+    return validation;
+  }
+
   try {
     const created = await prisma.material.create({
-      data: normalizeMaterialPayload(payload)
+      data: normalizeMaterialPayload(payload),
+      select: {
+        id: true,
+        name: true,
+        sku: true,
+        unit: true,
+        minStock: true,
+        notes: true
+      }
     });
     revalidatePath('/materials');
 
@@ -275,23 +322,42 @@ export async function createMaterial(payload: MaterialPayload): Promise<ActionRe
         name: created.name,
         sku: created.sku,
         unit: created.unit,
-        quantity: created.quantity,
+        quantity: 0,
         minStock: created.minStock,
         notes: created.notes
       }
     };
   } catch (error) {
     console.error('Failed to create material:', error);
-    return { ok: false, error: 'Unable to save material right now.' };
+    return { ok: false, error: formatMaterialMutationError(error) };
   }
 }
 
 export async function updateMaterial(id: string, payload: MaterialPayload): Promise<ActionResult<MaterialRecord>> {
+  const validation = validateMaterialPayload(payload);
+  if (!validation.ok) {
+    return validation;
+  }
+
   try {
-    const updated = await prisma.material.update({
+    const [updated, balance] = await prisma.$transaction([
+      prisma.material.update({
       where: { id },
-      data: normalizeMaterialPayload(payload)
-    });
+      data: normalizeMaterialPayload(payload),
+      select: {
+        id: true,
+        name: true,
+        sku: true,
+        unit: true,
+        minStock: true,
+        notes: true
+      }
+      }),
+      prisma.inventoryBalance.aggregate({
+        where: { materialId: id },
+        _sum: { quantity: true }
+      })
+    ]);
     revalidatePath('/materials');
 
     return {
@@ -301,14 +367,14 @@ export async function updateMaterial(id: string, payload: MaterialPayload): Prom
         name: updated.name,
         sku: updated.sku,
         unit: updated.unit,
-        quantity: updated.quantity,
+        quantity: balance._sum.quantity ?? 0,
         minStock: updated.minStock,
         notes: updated.notes
       }
     };
   } catch (error) {
     console.error('Failed to update material:', error);
-    return { ok: false, error: 'Unable to update material right now.' };
+    return { ok: false, error: formatMaterialMutationError(error) };
   }
 }
 
