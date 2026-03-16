@@ -739,49 +739,61 @@ export async function listInventoryTransactions(): Promise<{ data: InventoryTran
 }
 
 export async function getDashboardData(): Promise<DashboardView> {
-  const [totalSku, openJobs, onHandAggregate, materials, balanceSums, balances, txns] = await Promise.all([
-    prisma.material.count(),
-    prisma.job.count({ where: { status: 'OPEN' } }),
-    prisma.inventoryBalance.aggregate({ _sum: { quantity: true } }),
-    prisma.material.findMany({
-      select: {
-        id: true,
-        minStock: true
-      }
-    }),
-    prisma.inventoryBalance.groupBy({
-      by: ['materialId'],
-      _sum: { quantity: true }
-    }),
-    prisma.inventoryBalance.findMany({
-      include: {
-        material: true,
-        job: true
-      },
-      orderBy: [{ material: { name: 'asc' } }, { locationType: 'asc' }, { job: { number: 'asc' } }]
-    }),
-    listInventoryTransactions()
-  ]);
+  try {
+    const [totalSku, openJobs, onHandAggregate, materials, balanceSums, balances, txns] = await Promise.all([
+      prisma.material.count(),
+      prisma.job.count({ where: { status: 'OPEN' } }),
+      prisma.inventoryBalance.aggregate({ _sum: { quantity: true } }),
+      prisma.material.findMany({
+        select: {
+          id: true,
+          minStock: true
+        }
+      }),
+      prisma.inventoryBalance.groupBy({
+        by: ['materialId'],
+        _sum: { quantity: true }
+      }),
+      prisma.inventoryBalance.findMany({
+        include: {
+          material: true,
+          job: true
+        },
+        orderBy: [{ material: { name: 'asc' } }, { locationType: 'asc' }, { job: { number: 'asc' } }]
+      }),
+      listInventoryTransactions()
+    ]);
 
-  const quantityByMaterialId = new Map(balanceSums.map((entry) => [entry.materialId, entry._sum.quantity ?? 0]));
+    const quantityByMaterialId = new Map(balanceSums.map((entry) => [entry.materialId, entry._sum.quantity ?? 0]));
 
-  const lowStock = materials.filter((material) => (quantityByMaterialId.get(material.id) ?? 0) < material.minStock).length;
+    const lowStock = materials.filter((material) => (quantityByMaterialId.get(material.id) ?? 0) < material.minStock).length;
 
-  const inventoryRows: InventoryAtGlanceRow[] = balances.map((balance) => ({
-    id: balance.id,
-    materialName: balance.material.name,
-    materialSku: balance.material.sku,
-    locationLabel: balance.locationType === 'SHOP' ? 'SHOP' : `${balance.job?.number} — ${balance.job?.name}`,
-    quantity: balance.quantity,
-    unit: balance.material.unit
-  }));
+    const inventoryRows: InventoryAtGlanceRow[] = balances.map((balance) => ({
+      id: balance.id,
+      materialName: balance.material.name,
+      materialSku: balance.material.sku,
+      locationLabel: balance.locationType === 'SHOP' ? 'SHOP' : `${balance.job?.number} — ${balance.job?.name}`,
+      quantity: balance.quantity,
+      unit: balance.material.unit
+    }));
 
-  return {
-    totalSku,
-    lowStock,
-    openJobs,
-    totalInventoryUnits: onHandAggregate._sum.quantity ?? 0,
-    recentTransactions: txns.data.slice(0, 10),
-    inventoryRows
-  };
+    return {
+      totalSku,
+      lowStock,
+      openJobs,
+      totalInventoryUnits: onHandAggregate._sum.quantity ?? 0,
+      recentTransactions: txns.data.slice(0, 10),
+      inventoryRows
+    };
+  } catch (error) {
+    console.error('Failed to load dashboard data:', error);
+    return {
+      totalSku: 0,
+      lowStock: 0,
+      openJobs: 0,
+      totalInventoryUnits: 0,
+      recentTransactions: [],
+      inventoryRows: []
+    };
+  }
 }
