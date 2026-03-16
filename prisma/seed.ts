@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { JobStatus, PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
@@ -31,9 +31,9 @@ async function main() {
   ];
 
   const jobs = [
-    { number: 'J-24031', name: 'Aspen Residence', status: 'OPEN' },
-    { number: 'J-24044', name: 'Bayside Condos', status: 'OPEN' },
-    { number: 'J-24051', name: 'Creekside Kitchen', status: 'CLOSED' }
+    { number: 'J-24031', name: 'Aspen Residence', status: JobStatus.OPEN },
+    { number: 'J-24044', name: 'Bayside Condos', status: JobStatus.OPEN },
+    { number: 'J-24051', name: 'Creekside Kitchen', status: JobStatus.CLOSED }
   ];
 
   for (const material of materials) {
