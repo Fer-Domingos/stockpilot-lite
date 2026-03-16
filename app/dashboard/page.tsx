@@ -1,29 +1,29 @@
 import { AppShell } from '@/app/components/app-shell';
-import { getMaterialTotalQuantity, materials, summarizeInventory, transactions } from '@/lib/demo-data';
+import { getDashboardData } from '@/app/actions';
 import { getRole } from '@/lib/role';
 
-export default function DashboardPage({ searchParams }: { searchParams: { role?: string } }) {
+export default async function DashboardPage({ searchParams }: { searchParams: { role?: string } }) {
   const role = getRole(searchParams.role);
-  const summary = summarizeInventory();
+  const data = await getDashboardData();
 
   return (
     <AppShell role={role}>
       <section className="kpi-grid">
         <article className="card kpi-card">
           <p className="muted">SKUs Tracked</p>
-          <h3>{summary.totalSku}</h3>
+          <h3>{data.totalSku}</h3>
         </article>
         <article className="card kpi-card">
           <p className="muted">Low Stock Alerts</p>
-          <h3>{summary.lowStock}</h3>
+          <h3>{data.lowStock}</h3>
         </article>
         <article className="card kpi-card">
           <p className="muted">Open Jobs</p>
-          <h3>{summary.openJobs}</h3>
+          <h3>{data.openJobs}</h3>
         </article>
         <article className="card kpi-card">
-          <p className="muted">Inventory Value</p>
-          <h3>${summary.inventoryValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</h3>
+          <p className="muted">Inventory Units On Hand</p>
+          <h3>{data.totalInventoryUnits.toLocaleString()}</h3>
         </article>
       </section>
 
@@ -37,24 +37,22 @@ export default function DashboardPage({ searchParams }: { searchParams: { role?:
               <th>Date</th>
               <th>Type</th>
               <th>Material</th>
-              <th>Route</th>
+              <th>From</th>
+              <th>To</th>
               <th>Qty</th>
-              <th>User</th>
             </tr>
           </thead>
           <tbody>
-            {transactions.map((entry) => (
+            {data.recentTransactions.map((entry) => (
               <tr key={entry.id}>
-                <td>{entry.date}</td>
+                <td>{new Date(entry.createdAt).toLocaleString()}</td>
                 <td>{entry.type}</td>
                 <td>{entry.materialName}</td>
-                <td>
-                  {entry.from} → {entry.to}
-                </td>
+                <td>{entry.locationFrom}</td>
+                <td>{entry.locationTo}</td>
                 <td>
                   {entry.quantity} {entry.unit}
                 </td>
-                <td>{entry.user}</td>
               </tr>
             ))}
           </tbody>
@@ -66,20 +64,17 @@ export default function DashboardPage({ searchParams }: { searchParams: { role?:
           <h3>Inventory At-A-Glance</h3>
         </div>
         <div className="grid">
-          {materials.map((item) => {
-            const totalQuantity = getMaterialTotalQuantity(item);
-            return (
-              <div className="status-row" key={item.id}>
-                <div>
-                  <strong>{item.name}</strong>
-                  <p className="muted">{item.sku}</p>
-                </div>
-                <p className={totalQuantity <= item.minQuantity ? 'stock-badge low' : 'stock-badge'}>
-                  {totalQuantity} {item.unit}
-                </p>
+          {data.inventoryRows.map((row) => (
+            <div className="status-row" key={row.materialId}>
+              <div>
+                <strong>{row.materialName}</strong>
+                <p className="muted">{row.materialSku}</p>
               </div>
-            );
-          })}
+              <p className={row.totalQuantity <= row.minStock ? 'stock-badge low' : 'stock-badge'}>
+                {row.totalQuantity} {row.unit}
+              </p>
+            </div>
+          ))}
         </div>
       </section>
     </AppShell>

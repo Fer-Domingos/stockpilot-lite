@@ -20,7 +20,7 @@ export function TransferMaterialForm({ materials, jobs }: { materials: MaterialR
         <optgroup label="Shop">
           <option value="shop">Shop</option>
         </optgroup>
-        <optgroup label="Jobs">
+        <optgroup label="Open Jobs">
           {jobs.map((job) => (
             <option key={job.id} value={`loc-${job.id}`}>
               {job.number} — {job.name}
@@ -34,7 +34,7 @@ export function TransferMaterialForm({ materials, jobs }: { materials: MaterialR
         <optgroup label="Shop">
           <option value="shop">Shop</option>
         </optgroup>
-        <optgroup label="Jobs">
+        <optgroup label="Open Jobs">
           {jobs.map((job) => (
             <option key={job.id} value={`loc-${job.id}`}>
               {job.number} — {job.name}
@@ -48,7 +48,7 @@ export function TransferMaterialForm({ materials, jobs }: { materials: MaterialR
 
       <label htmlFor="notes">Transfer Notes</label>
       <textarea id="notes" name="notes" rows={3} placeholder="Cart number, phase, priority..." />
-      <button type="submit">Submit Transfer (Demo)</button>
+      <button type="submit">Submit Transfer</button>
     </form>
   );
 }
