@@ -63,19 +63,29 @@ export default async function DashboardPage({ searchParams }: { searchParams: { 
         <div className="section-title">
           <h3>Inventory At-A-Glance</h3>
         </div>
-        <div className="grid">
-          {data.inventoryRows.map((row) => (
-            <div className="status-row" key={row.materialId}>
-              <div>
-                <strong>{row.materialName}</strong>
-                <p className="muted">{row.materialSku}</p>
-              </div>
-              <p className={row.totalQuantity <= row.minStock ? 'stock-badge low' : 'stock-badge'}>
-                {row.totalQuantity} {row.unit}
-              </p>
-            </div>
-          ))}
-        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Material</th>
+              <th>Location</th>
+              <th>Quantity On Hand</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.inventoryRows.map((row) => (
+              <tr key={row.id}>
+                <td>
+                  {row.materialName}
+                  <div className="muted">{row.materialSku}</div>
+                </td>
+                <td>{row.locationLabel}</td>
+                <td>
+                  {row.quantity} {row.unit}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </section>
     </AppShell>
   );

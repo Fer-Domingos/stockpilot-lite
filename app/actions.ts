@@ -53,13 +53,22 @@ export type InventoryBalanceView = {
   jobQuantities: Array<{ jobId: string; jobLabel: string; quantity: number }>;
 };
 
+export type InventoryAtGlanceRow = {
+  id: string;
+  materialName: string;
+  materialSku: string;
+  locationLabel: string;
+  quantity: number;
+  unit: string;
+};
+
 export type DashboardView = {
   totalSku: number;
   lowStock: number;
   openJobs: number;
   totalInventoryUnits: number;
   recentTransactions: InventoryTransactionRecord[];
-  inventoryRows: InventoryBalanceView[];
+  inventoryRows: InventoryAtGlanceRow[];
 };
 
 type ActionResult<T = undefined> = {
@@ -664,22 +673,42 @@ export async function listInventoryTransactions(): Promise<{ data: InventoryTran
 }
 
 export async function getDashboardData(): Promise<DashboardView> {
-  const [materials, jobs, inventoryBalances, txns] = await Promise.all([
-    prisma.material.findMany({ orderBy: { createdAt: 'asc' } }),
-    prisma.job.findMany({ where: { status: 'OPEN' } }),
-    listInventoryBalances(),
+  const [totalSku, openJobs, onHandAggregate, materialsWithBalances, balances, txns] = await Promise.all([
+    prisma.material.count(),
+    prisma.job.count({ where: { status: 'OPEN' } }),
+    prisma.inventoryBalance.aggregate({ _sum: { quantity: true } }),
+    prisma.material.findMany({
+      include: { balances: true }
+    }),
+    prisma.inventoryBalance.findMany({
+      include: {
+        material: true,
+        job: true
+      },
+      orderBy: [{ material: { name: 'asc' } }, { locationType: 'asc' }, { job: { number: 'asc' } }]
+    }),
     listInventoryTransactions()
   ]);
 
-  const inventoryRows = inventoryBalances.data;
-  const totalInventoryUnits = inventoryRows.reduce((sum, row) => sum + row.totalQuantity, 0);
-  const lowStock = inventoryRows.filter((row) => row.totalQuantity <= row.minStock).length;
+  const lowStock = materialsWithBalances.filter((material) => {
+    const onHand = material.balances.reduce((sum, balance) => sum + balance.quantity, 0);
+    return onHand < material.minStock;
+  }).length;
+
+  const inventoryRows: InventoryAtGlanceRow[] = balances.map((balance) => ({
+    id: balance.id,
+    materialName: balance.material.name,
+    materialSku: balance.material.sku,
+    locationLabel: balance.locationType === 'SHOP' ? 'SHOP' : `${balance.job?.number} — ${balance.job?.name}`,
+    quantity: balance.quantity,
+    unit: balance.material.unit
+  }));
 
   return {
-    totalSku: materials.length,
+    totalSku,
     lowStock,
-    openJobs: jobs.length,
-    totalInventoryUnits,
+    openJobs,
+    totalInventoryUnits: onHandAggregate._sum.quantity ?? 0,
     recentTransactions: txns.data.slice(0, 10),
     inventoryRows
   };
