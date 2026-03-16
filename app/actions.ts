@@ -41,6 +41,19 @@ export type InventoryTransactionRecord = {
   hasPhoto: boolean;
 };
 
+export type ReceivingRecordView = {
+  id: string;
+  receivedAt: string;
+  materialName: string;
+  materialSku: string;
+  quantity: number;
+  destinationType: 'SHOP' | 'JOB';
+  destinationLabel: string;
+  invoiceNumber: string;
+  vendorName: string;
+  notes: string;
+};
+
 type ActionResult<T = undefined> = {
   ok: boolean;
   error?: string;
@@ -260,81 +273,118 @@ export async function receiveMaterial(formData: FormData) {
   const quantity = Number(formData.get('quantity') ?? 0);
 
   if (!materialId || !Number.isFinite(quantity) || quantity <= 0 || !['SHOP', 'JOB'].includes(destinationType)) {
-    redirect('/receive-materials');
+    redirect('/receive-materials?error=missing-required-fields');
   }
 
   if (destinationType === 'JOB' && !jobId) {
-    redirect('/receive-materials');
+    redirect('/receive-materials?error=job-required-for-job-destination');
   }
 
   const normalizedQuantity = Math.floor(quantity);
   const receivedAt = new Date();
 
-  await prisma.$transaction(async (tx) => {
-    if (destinationType === 'SHOP') {
-      await tx.material.update({
-        where: { id: materialId },
-        data: { quantity: { increment: normalizedQuantity } }
-      });
-    }
-
-    if (destinationType === 'JOB' && jobId) {
-      const job = await tx.job.findUnique({ where: { id: jobId } });
-      if (!job || job.status !== 'OPEN') {
-        throw new Error('Destination job must be open.');
+  try {
+    await prisma.$transaction(async (tx) => {
+      if (destinationType === 'SHOP') {
+        await tx.material.update({
+          where: { id: materialId },
+          data: { quantity: { increment: normalizedQuantity } }
+        });
       }
 
-      await tx.jobMaterialStock.upsert({
-        where: {
-          jobId_materialId: {
+      if (destinationType === 'JOB' && jobId) {
+        const job = await tx.job.findUnique({ where: { id: jobId } });
+        if (!job || job.status !== 'OPEN') {
+          throw new Error('Destination job must be open.');
+        }
+
+        await tx.jobMaterialStock.upsert({
+          where: {
+            jobId_materialId: {
+              jobId,
+              materialId
+            }
+          },
+          update: {
+            quantity: { increment: normalizedQuantity }
+          },
+          create: {
             jobId,
-            materialId
+            materialId,
+            quantity: normalizedQuantity
           }
-        },
-        update: {
-          quantity: { increment: normalizedQuantity }
-        },
-        create: {
-          jobId,
+        });
+      }
+
+      const receivingRecord = await tx.receivingRecord.create({
+        data: {
           materialId,
-          quantity: normalizedQuantity
+          quantity: normalizedQuantity,
+          destinationType,
+          jobId: destinationType === 'JOB' && jobId ? jobId : null,
+          invoiceNumber: invoiceNumber || null,
+          vendorName: vendorName || null,
+          notes: notes || null,
+          photoUrl: photoUrl || null,
+          receivedAt
         }
       });
-    }
 
-    const receivingRecord = await tx.receivingRecord.create({
-      data: {
-        materialId,
-        quantity: normalizedQuantity,
-        destinationType,
-        jobId: destinationType === 'JOB' && jobId ? jobId : null,
-        invoiceNumber: invoiceNumber || null,
-        vendorName: vendorName || null,
-        notes: notes || null,
-        photoUrl: photoUrl || null,
-        receivedAt
-      }
+      const locationTo = destinationType === 'JOB' && jobId ? `loc-${jobId}` : 'shop';
+      await tx.inventoryTransaction.create({
+        data: {
+          materialId,
+          jobId: destinationType === 'JOB' && jobId ? jobId : null,
+          quantity: normalizedQuantity,
+          type: 'RECEIVE',
+          locationFrom: null,
+          locationTo,
+          receivingRecordId: receivingRecord.id,
+          createdAt: receivedAt
+        }
+      });
     });
-
-    const locationTo = destinationType === 'JOB' && jobId ? `loc-${jobId}` : 'shop';
-    await tx.inventoryTransaction.create({
-      data: {
-        materialId,
-        jobId: destinationType === 'JOB' && jobId ? jobId : null,
-        quantity: normalizedQuantity,
-        type: 'RECEIVE',
-        locationFrom: null,
-        locationTo,
-        receivingRecordId: receivingRecord.id,
-        createdAt: receivedAt
-      }
-    });
-  });
+  } catch (error) {
+    console.error('Failed to receive material:', error);
+    redirect('/receive-materials?error=save-failed');
+  }
 
   revalidatePath('/dashboard');
   revalidatePath('/materials');
   revalidatePath('/history');
-  redirect('/receive-materials');
+  revalidatePath('/receive-materials');
+  redirect('/receive-materials?success=1');
+}
+export async function listReceivingRecords(): Promise<{ data: ReceivingRecordView[] }> {
+  try {
+    const receipts = await prisma.receivingRecord.findMany({
+      include: {
+        material: true,
+        job: true
+      },
+      orderBy: { receivedAt: 'desc' },
+      take: 20
+    });
+
+    return {
+      data: receipts.map((receipt) => ({
+        id: receipt.id,
+        receivedAt: receipt.receivedAt.toISOString(),
+        materialName: receipt.material.name,
+        materialSku: receipt.material.sku,
+        quantity: receipt.quantity,
+        destinationType: receipt.destinationType,
+        destinationLabel:
+          receipt.destinationType === 'JOB' && receipt.job ? `${receipt.job.number} — ${receipt.job.name}` : 'Shop',
+        invoiceNumber: receipt.invoiceNumber ?? '—',
+        vendorName: receipt.vendorName ?? '—',
+        notes: receipt.notes ?? '—'
+      }))
+    };
+  } catch (error) {
+    console.error('Failed to load receiving records:', error);
+    return { data: [] };
+  }
 }
 
 export async function transferMaterial(formData: FormData) {
