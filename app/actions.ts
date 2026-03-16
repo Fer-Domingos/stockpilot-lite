@@ -3,6 +3,8 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 
+import { InventoryLocationType, Prisma } from '@prisma/client';
+
 import { prisma } from '@/lib/prisma';
 
 export type MaterialRecord = {
@@ -27,7 +29,7 @@ export type JobRecord = {
 export type InventoryTransactionRecord = {
   id: string;
   createdAt: string;
-  type: 'RECEIVE' | 'TRANSFER';
+  type: 'RECEIVE' | 'TRANSFER' | 'ISSUE' | 'ADJUSTMENT';
   materialSku: string;
   materialName: string;
   quantity: number;
@@ -35,23 +37,29 @@ export type InventoryTransactionRecord = {
   locationFrom: string;
   locationTo: string;
   invoiceNumber: string;
-  destination: string;
   vendorName: string;
   notes: string;
   hasPhoto: boolean;
 };
 
-export type ReceivingRecordView = {
-  id: string;
-  receivedAt: string;
-  materialName: string;
+export type InventoryBalanceView = {
+  materialId: string;
   materialSku: string;
-  quantity: number;
-  destinationType: 'SHOP' | 'JOB';
-  destinationLabel: string;
-  invoiceNumber: string;
-  vendorName: string;
-  notes: string;
+  materialName: string;
+  unit: string;
+  minStock: number;
+  totalQuantity: number;
+  shopQuantity: number;
+  jobQuantities: Array<{ jobId: string; jobLabel: string; quantity: number }>;
+};
+
+export type DashboardView = {
+  totalSku: number;
+  lowStock: number;
+  openJobs: number;
+  totalInventoryUnits: number;
+  recentTransactions: InventoryTransactionRecord[];
+  inventoryRows: InventoryBalanceView[];
 };
 
 type ActionResult<T = undefined> = {
@@ -62,6 +70,11 @@ type ActionResult<T = undefined> = {
 
 type MaterialPayload = Omit<MaterialRecord, 'id' | 'quantity'>;
 type JobPayload = Omit<JobRecord, 'id'>;
+
+type ParsedLocation = {
+  locationType: InventoryLocationType;
+  jobId: string | null;
+};
 
 const statuses: JobStatus[] = ['OPEN', 'CLOSED'];
 
@@ -85,23 +98,107 @@ function normalizeJobPayload(payload: JobPayload): JobPayload {
   };
 }
 
-function formatLocationLabel(locationValue: string, jobsById: Map<string, JobRecord>) {
+function parseLocation(locationValue: string): ParsedLocation | null {
   if (locationValue === 'shop') {
-    return 'Shop';
+    return { locationType: 'SHOP', jobId: null };
   }
 
   if (locationValue.startsWith('loc-')) {
-    const jobId = locationValue.replace('loc-', '');
-    const job = jobsById.get(jobId);
-    return job ? `${job.number} — ${job.name}` : locationValue;
+    return { locationType: 'JOB', jobId: locationValue.replace('loc-', '') };
   }
 
-  return locationValue;
+  return null;
+}
+
+function formatLocationLabel(
+  locationType: InventoryLocationType | null,
+  job: { number: string; name: string } | null | undefined
+): string {
+  if (!locationType) {
+    return 'N/A';
+  }
+
+  if (locationType === 'SHOP') {
+    return 'Shop';
+  }
+
+  if (job) {
+    return `${job.number} — ${job.name}`;
+  }
+
+  return 'Job';
+}
+
+async function adjustInventoryBalance(
+  tx: Prisma.TransactionClient,
+  materialId: string,
+  locationType: InventoryLocationType,
+  jobId: string | null,
+  delta: number
+) {
+  if (delta === 0) {
+    return;
+  }
+
+  const existing = await tx.inventoryBalance.findFirst({
+    where: {
+      materialId,
+      locationType,
+      jobId: jobId ?? null
+    }
+  });
+
+  if (!existing && delta < 0) {
+    throw new Error('Insufficient stock for this location.');
+  }
+
+  if (existing && existing.quantity + delta < 0) {
+    throw new Error('Insufficient stock for this location.');
+  }
+
+  if (!existing) {
+    await tx.inventoryBalance.create({
+      data: {
+        materialId,
+        locationType,
+        jobId,
+        quantity: delta
+      }
+    });
+    return;
+  }
+
+  await tx.inventoryBalance.update({
+    where: { id: existing.id },
+    data: {
+      quantity: { increment: delta }
+    }
+  });
+}
+
+async function syncMaterialQuantitiesFromBalances() {
+  const materials = await prisma.material.findMany({
+    include: {
+      balances: true
+    }
+  });
+
+  await prisma.$transaction(
+    materials.map((material) =>
+      prisma.material.update({
+        where: { id: material.id },
+        data: {
+          quantity: material.balances.reduce((sum, balance) => sum + balance.quantity, 0)
+        }
+      })
+    )
+  );
 }
 
 export async function listMaterials(): Promise<{ data: MaterialRecord[] }> {
   try {
     const materials = await prisma.material.findMany({
+      include: { balances: true },
       orderBy: { createdAt: 'asc' }
     });
 
@@ -111,7 +208,7 @@ export async function listMaterials(): Promise<{ data: MaterialRecord[] }> {
         name: material.name,
         sku: material.sku,
         unit: material.unit,
-        quantity: material.quantity,
+        quantity: material.balances.reduce((sum, balance) => sum + balance.quantity, 0),
         minStock: material.minStock,
         notes: material.notes
       }))
@@ -285,38 +382,16 @@ export async function receiveMaterial(formData: FormData) {
 
   try {
     await prisma.$transaction(async (tx) => {
-      if (destinationType === 'SHOP') {
-        await tx.material.update({
-          where: { id: materialId },
-          data: { quantity: { increment: normalizedQuantity } }
-        });
-      }
-
       if (destinationType === 'JOB' && jobId) {
         const job = await tx.job.findUnique({ where: { id: jobId } });
         if (!job || job.status !== 'OPEN') {
           throw new Error('Destination job must be open.');
         }
-
-        await tx.jobMaterialStock.upsert({
-          where: {
-            jobId_materialId: {
-              jobId,
-              materialId
-            }
-          },
-          update: {
-            quantity: { increment: normalizedQuantity }
-          },
-          create: {
-            jobId,
-            materialId,
-            quantity: normalizedQuantity
-          }
-        });
       }
 
-      const receivingRecord = await tx.receivingRecord.create({
+      await adjustInventoryBalance(tx, materialId, destinationType, destinationType === 'JOB' ? jobId : null, normalizedQuantity);
+
+      await tx.receivingRecord.create({
         data: {
           materialId,
           quantity: normalizedQuantity,
@@ -330,20 +405,25 @@ export async function receiveMaterial(formData: FormData) {
         }
       });
 
-      const locationTo = destinationType === 'JOB' && jobId ? `loc-${jobId}` : 'shop';
       await tx.inventoryTransaction.create({
         data: {
           materialId,
-          jobId: destinationType === 'JOB' && jobId ? jobId : null,
+          transactionType: 'RECEIVE',
           quantity: normalizedQuantity,
-          type: 'RECEIVE',
-          locationFrom: null,
-          locationTo,
-          receivingRecordId: receivingRecord.id,
+          locationFromType: null,
+          locationFromJobId: null,
+          locationToType: destinationType,
+          locationToJobId: destinationType === 'JOB' ? jobId : null,
+          invoiceNumber: invoiceNumber || null,
+          vendorName: vendorName || null,
+          notes: notes || null,
+          photoUrl: photoUrl || null,
           createdAt: receivedAt
         }
       });
     });
+
+    await syncMaterialQuantitiesFromBalances();
   } catch (error) {
     console.error('Failed to receive material:', error);
     redirect('/receive-materials?error=save-failed');
@@ -353,15 +433,14 @@ export async function receiveMaterial(formData: FormData) {
   revalidatePath('/materials');
   revalidatePath('/history');
   revalidatePath('/receive-materials');
+  revalidatePath('/issue-materials');
   redirect('/receive-materials?success=1');
 }
-export async function listReceivingRecords(): Promise<{ data: ReceivingRecordView[] }> {
+
+export async function listReceivingRecords() {
   try {
     const receipts = await prisma.receivingRecord.findMany({
-      include: {
-        material: true,
-        job: true
-      },
+      include: { material: true, job: true },
       orderBy: { receivedAt: 'desc' },
       take: 20
     });
@@ -391,93 +470,192 @@ export async function transferMaterial(formData: FormData) {
   const materialId = String(formData.get('materialId') ?? '');
   const fromLocation = String(formData.get('fromLocation') ?? '');
   const toLocation = String(formData.get('toLocation') ?? '');
+  const notes = String(formData.get('notes') ?? '').trim();
   const quantity = Number(formData.get('quantity') ?? 0);
 
-  if (!materialId || !fromLocation || !toLocation || !Number.isFinite(quantity) || quantity <= 0 || fromLocation === toLocation) {
-    redirect('/transfer-materials');
+  const source = parseLocation(fromLocation);
+  const destination = parseLocation(toLocation);
+
+  if (!materialId || !source || !destination || !Number.isFinite(quantity) || quantity <= 0 || fromLocation === toLocation) {
+    redirect('/transfer-materials?error=invalid-transfer');
   }
 
   const normalizedQuantity = Math.floor(quantity);
-  const toJobId = toLocation.startsWith('loc-') ? toLocation.replace('loc-', '') : null;
 
-  await prisma.$transaction(async (tx) => {
-    if (fromLocation === 'shop') {
-      const material = await tx.material.findUnique({ where: { id: materialId } });
-      if (!material || material.quantity < normalizedQuantity) {
-        throw new Error('Insufficient stock for transfer.');
+  try {
+    await prisma.$transaction(async (tx) => {
+      if (source.locationType === 'JOB' && source.jobId) {
+        const sourceJob = await tx.job.findUnique({ where: { id: source.jobId } });
+        if (!sourceJob || sourceJob.status !== 'OPEN') {
+          throw new Error('Source job must be open.');
+        }
       }
 
-      await tx.material.update({
-        where: { id: materialId },
-        data: { quantity: { decrement: normalizedQuantity } }
+      if (destination.locationType === 'JOB' && destination.jobId) {
+        const destinationJob = await tx.job.findUnique({ where: { id: destination.jobId } });
+        if (!destinationJob || destinationJob.status !== 'OPEN') {
+          throw new Error('Destination job must be open.');
+        }
+      }
+
+      await adjustInventoryBalance(tx, materialId, source.locationType, source.jobId, -normalizedQuantity);
+      await adjustInventoryBalance(tx, materialId, destination.locationType, destination.jobId, normalizedQuantity);
+
+      await tx.inventoryTransaction.create({
+        data: {
+          materialId,
+          transactionType: 'TRANSFER',
+          quantity: normalizedQuantity,
+          locationFromType: source.locationType,
+          locationFromJobId: source.jobId,
+          locationToType: destination.locationType,
+          locationToJobId: destination.jobId,
+          notes: notes || null
+        }
       });
-    }
-
-    await tx.inventoryTransaction.create({
-      data: {
-        materialId,
-        jobId: toJobId,
-        quantity: normalizedQuantity,
-        type: 'TRANSFER',
-        locationFrom: fromLocation,
-        locationTo: toLocation
-      }
     });
-  });
+
+    await syncMaterialQuantitiesFromBalances();
+  } catch (error) {
+    console.error('Failed to transfer material:', error);
+    redirect('/transfer-materials?error=save-failed');
+  }
 
   revalidatePath('/dashboard');
   revalidatePath('/materials');
   revalidatePath('/history');
-  redirect('/transfer-materials');
+  revalidatePath('/transfer-materials');
+  revalidatePath('/issue-materials');
+  redirect('/transfer-materials?success=1');
+}
+
+export async function issueMaterial(formData: FormData) {
+  const materialId = String(formData.get('materialId') ?? '');
+  const fromLocation = String(formData.get('fromLocation') ?? '');
+  const notes = String(formData.get('notes') ?? '').trim();
+  const quantity = Number(formData.get('quantity') ?? 0);
+  const source = parseLocation(fromLocation);
+
+  if (!materialId || !source || !Number.isFinite(quantity) || quantity <= 0) {
+    redirect('/issue-materials?error=invalid-issue');
+  }
+
+  const normalizedQuantity = Math.floor(quantity);
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      if (source.locationType === 'JOB' && source.jobId) {
+        const sourceJob = await tx.job.findUnique({ where: { id: source.jobId } });
+        if (!sourceJob || sourceJob.status !== 'OPEN') {
+          throw new Error('Source job must be open.');
+        }
+      }
+
+      await adjustInventoryBalance(tx, materialId, source.locationType, source.jobId, -normalizedQuantity);
+
+      await tx.inventoryTransaction.create({
+        data: {
+          materialId,
+          transactionType: 'ISSUE',
+          quantity: normalizedQuantity,
+          locationFromType: source.locationType,
+          locationFromJobId: source.jobId,
+          locationToType: null,
+          locationToJobId: null,
+          notes: notes || null
+        }
+      });
+    });
+
+    await syncMaterialQuantitiesFromBalances();
+  } catch (error) {
+    console.error('Failed to issue material:', error);
+    redirect('/issue-materials?error=save-failed');
+  }
+
+  revalidatePath('/dashboard');
+  revalidatePath('/materials');
+  revalidatePath('/history');
+  revalidatePath('/issue-materials');
+  redirect('/issue-materials?success=1');
+}
+
+export async function listInventoryBalances(): Promise<{ data: InventoryBalanceView[] }> {
+  try {
+    const materials = await prisma.material.findMany({
+      include: {
+        balances: {
+          include: {
+            job: true
+          }
+        }
+      },
+      orderBy: { name: 'asc' }
+    });
+
+    return {
+      data: materials.map((material) => {
+        const totalQuantity = material.balances.reduce((sum, balance) => sum + balance.quantity, 0);
+        const shopQuantity = material.balances
+          .filter((balance) => balance.locationType === 'SHOP')
+          .reduce((sum, balance) => sum + balance.quantity, 0);
+        const jobQuantities = material.balances
+          .filter((balance) => balance.locationType === 'JOB' && balance.job)
+          .map((balance) => ({
+            jobId: balance.jobId as string,
+            jobLabel: `${balance.job?.number} — ${balance.job?.name}`,
+            quantity: balance.quantity
+          }))
+          .sort((a, b) => a.jobLabel.localeCompare(b.jobLabel));
+
+        return {
+          materialId: material.id,
+          materialSku: material.sku,
+          materialName: material.name,
+          unit: material.unit,
+          minStock: material.minStock,
+          totalQuantity,
+          shopQuantity,
+          jobQuantities
+        };
+      })
+    };
+  } catch (error) {
+    console.error('Failed to load inventory balances:', error);
+    return { data: [] };
+  }
 }
 
 export async function listInventoryTransactions(): Promise<{ data: InventoryTransactionRecord[] }> {
   try {
-    const [jobsResult, transactions] = await Promise.all([
-      listJobs(),
-      prisma.inventoryTransaction.findMany({
-        include: {
-          material: true,
-          receivingRecord: {
-            include: {
-              job: true
-            }
-          }
-        },
-        orderBy: { createdAt: 'desc' }
-      })
-    ]);
-
-    const jobsById = new Map(jobsResult.data.map((job) => [job.id, job]));
+    const transactions = await prisma.inventoryTransaction.findMany({
+      include: {
+        material: true,
+        locationFromJob: true,
+        locationToJob: true
+      },
+      orderBy: { createdAt: 'desc' }
+    });
 
     return {
-      data: transactions.map((entry) => {
-        const destination =
-          entry.receivingRecord?.destinationType === 'JOB' && entry.receivingRecord.job
-            ? `${entry.receivingRecord.job.number} — ${entry.receivingRecord.job.name}`
-            : entry.receivingRecord?.destinationType === 'SHOP'
-              ? 'Shop'
-              : entry.locationTo
-                ? formatLocationLabel(entry.locationTo, jobsById)
-                : 'N/A';
-
-        return {
-          id: entry.id,
-          createdAt: entry.createdAt.toISOString(),
-          type: entry.type,
-          materialSku: entry.material.sku,
-          materialName: entry.material.name,
-          quantity: entry.quantity,
-          unit: entry.material.unit,
-          locationFrom: entry.locationFrom ? formatLocationLabel(entry.locationFrom, jobsById) : 'Vendor',
-          locationTo: entry.locationTo ? formatLocationLabel(entry.locationTo, jobsById) : 'N/A',
-          invoiceNumber: entry.receivingRecord?.invoiceNumber ?? '—',
-          destination,
-          vendorName: entry.receivingRecord?.vendorName ?? '—',
-          notes: entry.receivingRecord?.notes ?? '—',
-          hasPhoto: Boolean(entry.receivingRecord?.photoUrl)
-        };
-      })
+      data: transactions.map((entry) => ({
+        id: entry.id,
+        createdAt: entry.createdAt.toISOString(),
+        type: entry.transactionType,
+        materialSku: entry.material.sku,
+        materialName: entry.material.name,
+        quantity: entry.quantity,
+        unit: entry.material.unit,
+        locationFrom: formatLocationLabel(entry.locationFromType, entry.locationFromJob),
+        locationTo:
+          entry.transactionType === 'ISSUE'
+            ? 'Production / Consumption'
+            : formatLocationLabel(entry.locationToType, entry.locationToJob),
+        invoiceNumber: entry.invoiceNumber ?? '—',
+        vendorName: entry.vendorName ?? '—',
+        notes: entry.notes ?? '—',
+        hasPhoto: Boolean(entry.photoUrl)
+      }))
     };
   } catch (error) {
     console.error('Failed to load inventory history:', error);
@@ -485,9 +663,24 @@ export async function listInventoryTransactions(): Promise<{ data: InventoryTran
   }
 }
 
-export async function issueMaterial() {
-  revalidatePath('/dashboard');
-  revalidatePath('/materials');
-  revalidatePath('/history');
-  redirect('/transfer-materials');
+export async function getDashboardData(): Promise<DashboardView> {
+  const [materials, jobs, inventoryBalances, txns] = await Promise.all([
+    prisma.material.findMany({ orderBy: { createdAt: 'asc' } }),
+    prisma.job.findMany({ where: { status: 'OPEN' } }),
+    listInventoryBalances(),
+    listInventoryTransactions()
+  ]);
+
+  const inventoryRows = inventoryBalances.data;
+  const totalInventoryUnits = inventoryRows.reduce((sum, row) => sum + row.totalQuantity, 0);
+  const lowStock = inventoryRows.filter((row) => row.totalQuantity <= row.minStock).length;
+
+  return {
+    totalSku: materials.length,
+    lowStock,
+    openJobs: jobs.length,
+    totalInventoryUnits,
+    recentTransactions: txns.data.slice(0, 10),
+    inventoryRows
+  };
 }

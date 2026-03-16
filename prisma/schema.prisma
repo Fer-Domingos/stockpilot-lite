@@ -18,9 +18,9 @@ model Material {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  transactions   InventoryTransaction[]
-  receivingLogs  ReceivingRecord[]
-  jobAllocations JobMaterialStock[]
+  balances      InventoryBalance[]
+  transactions  InventoryTransaction[]
+  receivingLogs ReceivingRecord[]
 }
 
 model Job {
@@ -31,39 +31,40 @@ model Job {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
-  transactions   InventoryTransaction[]
-  receivingLogs  ReceivingRecord[]
-  materialStocks JobMaterialStock[]
+  balances         InventoryBalance[]
+  receivingLogs    ReceivingRecord[]
+  transactionsFrom InventoryTransaction[] @relation("TxFromJob")
+  transactionsTo   InventoryTransaction[] @relation("TxToJob")
 }
 
-model JobMaterialStock {
-  id         String   @id @default(cuid())
-  jobId      String
-  materialId String
-  quantity   Int      @default(0)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+model InventoryBalance {
+  id           String                @id @default(cuid())
+  materialId   String
+  locationType InventoryLocationType
+  jobId        String?
+  quantity     Int                   @default(0)
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
 
-  job      Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
   material Material @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  job      Job?     @relation(fields: [jobId], references: [id], onDelete: Cascade)
 
-  @@unique([jobId, materialId])
-  @@index([materialId])
+  @@unique([materialId, locationType, jobId])
+  @@index([locationType, jobId])
 }
 
 model ReceivingRecord {
-  id                 String               @id @default(cuid())
-  materialId         String
-  quantity           Int
-  destinationType    DestinationType
-  jobId              String?
-  invoiceNumber      String?
-  vendorName         String?
-  notes              String?
-  photoUrl           String?
-  receivedAt         DateTime
-  createdAt          DateTime             @default(now())
-  transaction        InventoryTransaction?
+  id              String          @id @default(cuid())
+  materialId      String
+  quantity        Int
+  destinationType DestinationType
+  jobId           String?
+  invoiceNumber   String?
+  vendorName      String?
+  notes           String?
+  photoUrl        String?
+  receivedAt      DateTime
+  createdAt       DateTime        @default(now())
 
   material Material @relation(fields: [materialId], references: [id])
   job      Job?     @relation(fields: [jobId], references: [id], onDelete: SetNull)
@@ -74,27 +75,39 @@ model ReceivingRecord {
 }
 
 model InventoryTransaction {
-  id               String                   @id @default(cuid())
-  materialId       String
-  jobId            String?
-  receivingRecordId String?                 @unique
-  quantity         Int
-  type             InventoryTransactionType
-  locationFrom     String?
-  locationTo       String?
-  createdAt        DateTime                 @default(now())
+  id                String                   @id @default(cuid())
+  materialId        String
+  transactionType   InventoryTransactionType
+  quantity          Int
+  locationFromType  InventoryLocationType?
+  locationFromJobId String?
+  locationToType    InventoryLocationType?
+  locationToJobId   String?
+  invoiceNumber     String?
+  vendorName        String?
+  notes             String?
+  photoUrl          String?
+  createdAt         DateTime                 @default(now())
 
-  material        Material       @relation(fields: [materialId], references: [id])
-  job             Job?           @relation(fields: [jobId], references: [id])
-  receivingRecord ReceivingRecord? @relation(fields: [receivingRecordId], references: [id], onDelete: SetNull)
+  material        Material @relation(fields: [materialId], references: [id])
+  locationFromJob Job?     @relation("TxFromJob", fields: [locationFromJobId], references: [id], onDelete: SetNull)
+  locationToJob   Job?     @relation("TxToJob", fields: [locationToJobId], references: [id], onDelete: SetNull)
 
   @@index([materialId, createdAt])
-  @@index([jobId, createdAt])
+  @@index([locationFromJobId, createdAt])
+  @@index([locationToJobId, createdAt])
 }
 
 enum InventoryTransactionType {
   RECEIVE
   TRANSFER
+  ISSUE
+  ADJUSTMENT
+}
+
+enum InventoryLocationType {
+  SHOP
+  JOB
 }
 
 enum JobStatus {
