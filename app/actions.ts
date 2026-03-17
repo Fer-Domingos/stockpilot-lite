@@ -1,6 +1,6 @@
 'use server';
 
-import { revalidatePath } from 'next/cache';
+import { revalidatePath, unstable_noStore as noStore } from 'next/cache';
 import { redirect } from 'next/navigation';
 
 import { InventoryLocationType, Prisma } from '@prisma/client';
@@ -266,6 +266,8 @@ async function syncMaterialQuantitiesFromBalances() {
 }
 
 export async function listMaterials(): Promise<{ data: MaterialRecord[] }> {
+  noStore();
+
   try {
     const materials = await prisma.material.findMany({
       select: {
