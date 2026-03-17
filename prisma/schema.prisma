@@ -60,14 +60,15 @@ model ReceivingRecord {
   destinationType DestinationType
   jobId           String?
   invoiceNumber   String?
-  vendorName      String?
+  vendor          String?
   notes           String?
   photoUrl        String?
   receivedAt      DateTime
   createdAt       DateTime        @default(now())
 
-  material Material @relation(fields: [materialId], references: [id])
-  job      Job?     @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  material     Material              @relation(fields: [materialId], references: [id])
+  job          Job?                  @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  transaction  InventoryTransaction?
 
   @@index([createdAt])
   @@index([materialId, receivedAt])
@@ -84,14 +85,16 @@ model InventoryTransaction {
   locationToType    InventoryLocationType?
   locationToJobId   String?
   invoiceNumber     String?
-  vendorName        String?
+  vendor            String?
   notes             String?
   photoUrl          String?
+  receivingRecordId String?                  @unique
   createdAt         DateTime                 @default(now())
 
-  material        Material @relation(fields: [materialId], references: [id])
-  locationFromJob Job?     @relation("TxFromJob", fields: [locationFromJobId], references: [id], onDelete: SetNull)
-  locationToJob   Job?     @relation("TxToJob", fields: [locationToJobId], references: [id], onDelete: SetNull)
+  material       Material       @relation(fields: [materialId], references: [id])
+  locationFromJob Job?           @relation("TxFromJob", fields: [locationFromJobId], references: [id], onDelete: SetNull)
+  locationToJob   Job?           @relation("TxToJob", fields: [locationToJobId], references: [id], onDelete: SetNull)
+  receivingRecord ReceivingRecord? @relation(fields: [receivingRecordId], references: [id], onDelete: SetNull)
 
   @@index([materialId, createdAt])
   @@index([locationFromJobId, createdAt])

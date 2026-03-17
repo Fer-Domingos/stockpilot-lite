@@ -534,7 +534,7 @@ export async function receiveMaterial(formData: FormData) {
   const legacyDestinationType = String(formData.get('destinationType') ?? '').trim();
   const legacyJobId = String(formData.get('jobId') ?? '').trim();
   const invoiceNumber = String(formData.get('invoiceNumber') ?? '').trim();
-  const vendorName = String(formData.get('vendorName') ?? '').trim();
+  const vendor = String(formData.get('vendorName') ?? '').trim();
   const notes = String(formData.get('notes') ?? '').trim();
   const photoUrl = String(formData.get('photoUrl') ?? '').trim();
   const quantity = Number(formData.get('quantity') ?? 0);
@@ -575,7 +575,7 @@ export async function receiveMaterial(formData: FormData) {
     missingFields.push('invoice number');
   }
 
-  if (!vendorName) {
+  if (!vendor) {
     missingFields.push('vendor');
   }
 
@@ -612,21 +612,23 @@ export async function receiveMaterial(formData: FormData) {
 
   try {
     await prisma.$transaction(async (tx) => {
-      await adjustInventoryBalance(tx, materialId, destinationType, destinationType === 'JOB' ? jobId : null, normalizedQuantity);
+      const destinationJobId = destinationType === 'JOB' ? jobId : null;
 
-      await tx.receivingRecord.create({
+      const receipt = await tx.receivingRecord.create({
         data: {
           materialId,
           quantity: normalizedQuantity,
           destinationType,
-          jobId: destinationType === 'JOB' && jobId ? jobId : null,
+          jobId: destinationJobId,
           invoiceNumber: invoiceNumber || null,
-          vendorName: vendorName || null,
+          vendor: vendor || null,
           notes: notes || null,
           photoUrl: photoUrl || null,
           receivedAt
         }
       });
+
+      await adjustInventoryBalance(tx, materialId, destinationType, destinationJobId, normalizedQuantity);
 
       await tx.inventoryTransaction.create({
         data: {
@@ -636,11 +638,12 @@ export async function receiveMaterial(formData: FormData) {
           locationFromType: null,
           locationFromJobId: null,
           locationToType: destinationType,
-          locationToJobId: destinationType === 'JOB' ? jobId : null,
+          locationToJobId: destinationJobId,
           invoiceNumber: invoiceNumber || null,
-          vendorName: vendorName || null,
+          vendor: vendor || null,
           notes: notes || null,
           photoUrl: photoUrl || null,
+          receivingRecordId: receipt.id,
           createdAt: receivedAt
         }
       });
@@ -654,16 +657,25 @@ export async function receiveMaterial(formData: FormData) {
       if (error.code === 'P2003') {
         message = 'Receipt references a missing material or job record.';
       } else if (error.code === 'P2011') {
-        message = 'A required receive field is missing in the database write.';
+        message = `A required receive field is missing in the database write (${error.meta?.constraint ?? 'unknown constraint'}).`;
       } else if (error.code === 'P2022') {
-        message = 'Database schema is out of date. Run Prisma migrations.';
+        message = `Database schema is out of date (missing column: ${String(error.meta?.column ?? 'unknown')}). Run Prisma migrations.`;
       }
     } else if (error instanceof Error && error.message) {
       message = error.message;
     }
 
     console.error('Failed to receive material:', {
+      materialId,
+      destinationType,
+      jobId: destinationType === 'JOB' ? jobId : null,
+      quantity: normalizedQuantity,
+      invoiceNumber,
+      vendor,
+      prismaCode: error instanceof Prisma.PrismaClientKnownRequestError ? error.code : null,
+      prismaMeta: error instanceof Prisma.PrismaClientKnownRequestError ? error.meta : null,
       message,
+      stack: error instanceof Error ? error.stack : null,
       error
     });
     redirect(`/receive-materials?error=save-failed&message=${encodeURIComponent(message)}`);
@@ -697,7 +709,7 @@ export async function listReceivingRecords() {
         destinationLabel:
           receipt.destinationType === 'JOB' && receipt.job ? `${receipt.job.number} — ${receipt.job.name}` : 'Shop',
         invoiceNumber: receipt.invoiceNumber ?? '—',
-        vendorName: receipt.vendorName ?? '—',
+        vendorName: receipt.vendor ?? '—',
         notes: receipt.notes ?? '—'
       }))
     };
@@ -927,7 +939,7 @@ export async function listInventoryTransactions(): Promise<{ data: InventoryTran
             ? 'Production / Consumption'
             : formatLocationLabel(entry.locationToType, entry.locationToJob),
         invoiceNumber: entry.invoiceNumber ?? '—',
-        vendorName: entry.vendorName ?? '—',
+        vendorName: entry.vendor ?? '—',
         notes: entry.notes ?? '—',
         hasPhoto: Boolean(entry.photoUrl)
       }))
