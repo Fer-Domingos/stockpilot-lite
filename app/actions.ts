@@ -86,12 +86,27 @@ type ParsedLocation = {
 };
 
 const statuses: JobStatus[] = ['OPEN', 'CLOSED'];
+const materialUnits = ['UNIT', 'SHEETS'] as const;
+
+function normalizeMaterialUnit(unit: string): string {
+  const normalized = unit.trim().toUpperCase();
+
+  if (normalized === 'SHEET' || normalized === 'SHEETS') {
+    return 'SHEETS';
+  }
+
+  if (normalized === 'UNIT' || normalized === 'UNITS') {
+    return 'UNIT';
+  }
+
+  return normalized;
+}
 
 function normalizeMaterialPayload(payload: MaterialPayload): MaterialPayload {
   return {
     name: payload.name.trim(),
     sku: payload.sku.trim(),
-    unit: payload.unit.trim(),
+    unit: normalizeMaterialUnit(payload.unit),
     minStock: Math.max(0, Math.floor(payload.minStock)),
     notes: payload.notes.trim()
   };
@@ -108,6 +123,10 @@ function validateMaterialPayload(payload: MaterialPayload): ActionResult<Materia
 
   if (!payload.unit.trim()) {
     return { ok: false, error: 'Unit is required.' };
+  }
+
+  if (!materialUnits.includes(normalizeMaterialUnit(payload.unit) as (typeof materialUnits)[number])) {
+    return { ok: false, error: 'Unit must be either UNIT or SHEETS.' };
   }
 
   if (!Number.isFinite(payload.minStock) || payload.minStock < 0) {

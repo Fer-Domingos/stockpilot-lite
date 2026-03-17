@@ -9,10 +9,12 @@ type MaterialFormState = Omit<MaterialRecord, 'id' | 'quantity'>;
 const emptyForm: MaterialFormState = {
   name: '',
   sku: '',
-  unit: '',
+  unit: 'UNIT',
   minStock: 0,
   notes: ''
 };
+
+const unitOptions = ['UNIT', 'SHEETS'] as const;
 
 export function MaterialsManager({
   initialMaterials
@@ -43,7 +45,7 @@ export function MaterialsManager({
     return {
       name: payload.name.trim(),
       sku: payload.sku.trim(),
-      unit: payload.unit.trim(),
+      unit: payload.unit.trim().toUpperCase(),
       minStock: Math.max(0, Math.floor(payload.minStock)),
       notes: payload.notes.trim()
     };
@@ -122,13 +124,18 @@ export function MaterialsManager({
           />
 
           <label htmlFor="unit">Unit</label>
-          <input
+          <select
             id="unit"
             value={form.unit}
             onChange={(event) => setForm((current) => ({ ...current, unit: event.target.value }))}
-            placeholder="Each, Sheets, Pairs..."
             required
-          />
+          >
+            {unitOptions.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
 
           <label htmlFor="minimumStock">Minimum Stock</label>
           <input
@@ -197,7 +204,7 @@ export function MaterialsManager({
                           setForm({
                             name: material.name,
                             sku: material.sku,
-                            unit: material.unit,
+                            unit: unitOptions.includes(material.unit as (typeof unitOptions)[number]) ? material.unit : 'UNIT',
                             minStock: material.minStock,
                             notes: material.notes
                           });
