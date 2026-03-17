@@ -4,6 +4,8 @@ import { MaterialsManager } from '@/app/components/materials-manager';
 import { listInventoryBalances, listMaterials } from '@/app/actions';
 import { getRole } from '@/lib/role';
 
+export const dynamic = 'force-dynamic';
+
 export default async function MaterialsPage({ searchParams }: { searchParams: { role?: string } }) {
   const role = getRole(searchParams.role);
   const [{ data: materials }, { data: inventoryBalances }] = await Promise.all([listMaterials(), listInventoryBalances()]);
