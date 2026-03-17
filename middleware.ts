@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { authConfig, decodeSession } from '@/lib/auth';
+import { authConfig, decodeSession } from '@/lib/session';
 
 const PUBLIC_PATHS = new Set(['/login']);
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   if (pathname.startsWith('/_next') || pathname.startsWith('/favicon.ico')) {
@@ -12,7 +12,7 @@ export function middleware(request: NextRequest) {
   }
 
   const sessionToken = request.cookies.get(authConfig.sessionCookieName)?.value;
-  const session = decodeSession(sessionToken);
+  const session = await decodeSession(sessionToken);
   const isPublic = PUBLIC_PATHS.has(pathname);
 
   if (!session && !isPublic) {
