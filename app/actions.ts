@@ -530,15 +530,34 @@ export async function deleteJob(id: string): Promise<ActionResult> {
 
 export async function receiveMaterial(formData: FormData) {
   const materialId = String(formData.get('materialId') ?? '');
-  const destinationType = String(formData.get('destinationType') ?? 'SHOP') as 'SHOP' | 'JOB';
-  const jobId = String(formData.get('jobId') ?? '');
+  const destinationValue = String(formData.get('destination') ?? '').trim();
+  const legacyDestinationType = String(formData.get('destinationType') ?? '').trim();
+  const legacyJobId = String(formData.get('jobId') ?? '').trim();
   const invoiceNumber = String(formData.get('invoiceNumber') ?? '').trim();
   const vendorName = String(formData.get('vendorName') ?? '').trim();
   const notes = String(formData.get('notes') ?? '').trim();
   const photoUrl = String(formData.get('photoUrl') ?? '').trim();
   const quantity = Number(formData.get('quantity') ?? 0);
 
-  if (!materialId || !Number.isFinite(quantity) || quantity <= 0 || !['SHOP', 'JOB'].includes(destinationType)) {
+  let destinationType: 'SHOP' | 'JOB' = 'SHOP';
+  let jobId: string | null = null;
+  let hasValidDestination = true;
+
+  if (destinationValue) {
+    if (destinationValue === 'SHOP') {
+      destinationType = 'SHOP';
+    } else if (destinationValue.startsWith('JOB:')) {
+      destinationType = 'JOB';
+      jobId = destinationValue.slice(4).trim() || null;
+    } else {
+      hasValidDestination = false;
+    }
+  } else if (legacyDestinationType === 'JOB') {
+    destinationType = 'JOB';
+    jobId = legacyJobId || null;
+  }
+
+  if (!materialId || !Number.isFinite(quantity) || quantity <= 0 || !hasValidDestination || !['SHOP', 'JOB'].includes(destinationType)) {
     redirect('/receive-materials?error=missing-required-fields');
   }
 

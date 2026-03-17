@@ -1,21 +1,8 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-
 import { JobRecord, MaterialRecord, receiveMaterial } from '@/app/actions';
 
 export function ReceiveMaterialForm({ materials, jobs }: { materials: MaterialRecord[]; jobs: JobRecord[] }) {
-  const [destinationType, setDestinationType] = useState<'SHOP' | 'JOB'>('SHOP');
-  const isJobDestination = destinationType === 'JOB';
-
-  const destinationHint = useMemo(() => {
-    if (isJobDestination) {
-      return 'Post directly into an open job inventory allocation.';
-    }
-
-    return 'Post into Shop general inventory.';
-  }, [isJobDestination]);
-
   return (
     <form action={receiveMaterial}>
       <label htmlFor="materialId">Material</label>
@@ -28,35 +15,17 @@ export function ReceiveMaterialForm({ materials, jobs }: { materials: MaterialRe
         ))}
       </select>
 
-      <label htmlFor="destinationType">Destination</label>
-      <select
-        id="destinationType"
-        name="destinationType"
-        value={destinationType}
-        onChange={(event) => setDestinationType(event.target.value as 'SHOP' | 'JOB')}
-        required
-      >
-        <option value="SHOP">Shop</option>
-        <option value="JOB">Job</option>
+      <label htmlFor="destination">Destination</label>
+      <select id="destination" name="destination" required defaultValue="SHOP">
+        <option value="SHOP">SHOP (General Inventory)</option>
+        {jobs.map((job) => (
+          <option key={job.id} value={`JOB:${job.id}`}>
+            JOB {job.number} — {job.name}
+          </option>
+        ))}
       </select>
 
-      <p className="muted">{destinationHint}</p>
-
-      {isJobDestination && (
-        <>
-          <label htmlFor="jobId">Destination Job (Open Only)</label>
-          <select id="jobId" name="jobId" required>
-            <option value="">Select open job</option>
-            {jobs.map((job) => (
-              <option key={job.id} value={job.id}>
-                {job.number} — {job.name}
-              </option>
-            ))}
-          </select>
-        </>
-      )}
-
-      {!isJobDestination && <input type="hidden" name="jobId" value="" />}
+      <p className="muted">Choose SHOP for general stock, or choose a JOB to receive directly into that job allocation.</p>
 
       <label htmlFor="invoiceNumber">Invoice Number</label>
       <input id="invoiceNumber" name="invoiceNumber" placeholder="INV-100245" />
