@@ -2,7 +2,8 @@
 
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { authConfig, encodeSession, verifyAdminCredentials } from '@/lib/auth';
+import { verifyAdminCredentials } from '@/lib/auth';
+import { authConfig, encodeSession } from '@/lib/session';
 
 export async function loginAction(formData: FormData) {
   const email = String(formData.get('email') ?? '');
@@ -14,7 +15,7 @@ export async function loginAction(formData: FormData) {
     redirect('/login?error=invalid_credentials');
   }
 
-  cookies().set(authConfig.sessionCookieName, encodeSession({ email: user.email, issuedAt: Date.now() }), {
+  cookies().set(authConfig.sessionCookieName, await encodeSession({ email: user.email, issuedAt: Date.now() }), {
     httpOnly: true,
     sameSite: 'lax',
     secure: process.env.NODE_ENV === 'production',
