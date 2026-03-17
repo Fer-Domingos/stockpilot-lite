@@ -4,15 +4,17 @@ import { listJobs, listMaterials, listReceivingRecords } from '@/app/actions';
 import { getRole } from '@/lib/role';
 
 const errorMessages: Record<string, string> = {
-  'missing-required-fields': 'Material, quantity, and destination are required.',
+  'missing-required-fields': 'Material, quantity, destination, invoice number, and vendor are required.',
   'job-required-for-job-destination': 'Please select a destination job when destination is Job.',
+  'invalid-material': 'Selected material was not found.',
+  'invalid-job': 'Destination job is invalid or closed.',
   'save-failed': 'Unable to save receipt right now. Please try again.'
 };
 
 export default async function ReceiveMaterialsPage({
   searchParams
 }: {
-  searchParams: { role?: string; error?: string; success?: string };
+  searchParams: { role?: string; error?: string; message?: string; success?: string };
 }) {
   const role = getRole(searchParams.role);
   const [{ data: materials }, { data: jobs }, { data: receipts }] = await Promise.all([
@@ -21,7 +23,8 @@ export default async function ReceiveMaterialsPage({
     listReceivingRecords()
   ]);
   const openJobs = jobs.filter((job) => job.status === 'OPEN');
-  const errorMessage = searchParams.error ? errorMessages[searchParams.error] ?? 'Unable to receive material.' : null;
+  const detailedMessage = searchParams.message ? decodeURIComponent(searchParams.message) : null;
+  const errorMessage = detailedMessage || (searchParams.error ? errorMessages[searchParams.error] ?? 'Unable to receive material.' : null);
   const showSuccess = searchParams.success === '1';
 
   return (
