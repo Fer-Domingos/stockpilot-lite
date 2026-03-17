@@ -1,0 +1,6 @@
+UPDATE "Material"
+SET "unit" = CASE
+  WHEN UPPER(TRIM("unit")) IN ('SHEET', 'SHEETS') THEN 'SHEETS'
+  WHEN UPPER(TRIM("unit")) IN ('UNIT', 'UNITS') THEN 'UNIT'
+  ELSE UPPER(TRIM("unit"))
+END;
