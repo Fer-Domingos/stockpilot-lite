@@ -131,6 +131,22 @@ function formatMaterialMutationError(error: unknown): string {
   return 'Unable to save material right now.';
 }
 
+function isBalanceTableUnavailable(error: unknown): boolean {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError)) {
+    return false;
+  }
+
+  if (error.code === 'P2021') {
+    return true;
+  }
+
+  if (error.code === 'P2022') {
+    return true;
+  }
+
+  return false;
+}
+
 function normalizeJobPayload(payload: JobPayload): JobPayload {
   const status = statuses.includes(payload.status) ? payload.status : 'OPEN';
 
@@ -257,6 +273,7 @@ export async function listMaterials(): Promise<{ data: MaterialRecord[] }> {
         name: true,
         sku: true,
         unit: true,
+        quantity: true,
         minStock: true,
         notes: true
       },
@@ -267,15 +284,25 @@ export async function listMaterials(): Promise<{ data: MaterialRecord[] }> {
       return { data: [] };
     }
 
-    const balanceSums = await prisma.inventoryBalance.groupBy({
-      by: ['materialId'],
-      _sum: { quantity: true },
-      where: {
-        materialId: { in: materials.map((material) => material.id) }
-      }
-    });
+    let quantityByMaterialId = new Map<string, number>();
 
-    const quantityByMaterialId = new Map(balanceSums.map((entry) => [entry.materialId, entry._sum.quantity ?? 0]));
+    try {
+      const balanceSums = await prisma.inventoryBalance.groupBy({
+        by: ['materialId'],
+        _sum: { quantity: true },
+        where: {
+          materialId: { in: materials.map((material) => material.id) }
+        }
+      });
+
+      quantityByMaterialId = new Map(balanceSums.map((entry) => [entry.materialId, entry._sum.quantity ?? 0]));
+    } catch (error) {
+      if (!isBalanceTableUnavailable(error)) {
+        throw error;
+      }
+
+      console.warn('InventoryBalance table unavailable, falling back to Material.quantity.');
+    }
 
     return {
       data: materials.map((material) => ({
@@ -283,7 +310,7 @@ export async function listMaterials(): Promise<{ data: MaterialRecord[] }> {
         name: material.name,
         sku: material.sku,
         unit: material.unit,
-        quantity: quantityByMaterialId.get(material.id) ?? 0,
+        quantity: quantityByMaterialId.get(material.id) ?? material.quantity,
         minStock: material.minStock,
         notes: material.notes
       }))
@@ -309,6 +336,7 @@ export async function createMaterial(payload: MaterialPayload): Promise<ActionRe
         name: true,
         sku: true,
         unit: true,
+        quantity: true,
         minStock: true,
         notes: true
       }
@@ -322,7 +350,7 @@ export async function createMaterial(payload: MaterialPayload): Promise<ActionRe
         name: created.name,
         sku: created.sku,
         unit: created.unit,
-        quantity: 0,
+        quantity: created.quantity,
         minStock: created.minStock,
         notes: created.notes
       }
@@ -340,8 +368,7 @@ export async function updateMaterial(id: string, payload: MaterialPayload): Prom
   }
 
   try {
-    const [updated, balance] = await prisma.$transaction([
-      prisma.material.update({
+    const updated = await prisma.material.update({
       where: { id },
       data: normalizeMaterialPayload(payload),
       select: {
@@ -349,15 +376,29 @@ export async function updateMaterial(id: string, payload: MaterialPayload): Prom
         name: true,
         sku: true,
         unit: true,
+        quantity: true,
         minStock: true,
         notes: true
       }
-      }),
-      prisma.inventoryBalance.aggregate({
+    });
+
+    let quantity = updated.quantity;
+
+    try {
+      const balance = await prisma.inventoryBalance.aggregate({
         where: { materialId: id },
         _sum: { quantity: true }
-      })
-    ]);
+      });
+
+      quantity = balance._sum.quantity ?? 0;
+    } catch (error) {
+      if (!isBalanceTableUnavailable(error)) {
+        throw error;
+      }
+
+      console.warn('InventoryBalance table unavailable, falling back to Material.quantity.');
+    }
+
     revalidatePath('/materials');
 
     return {
@@ -367,7 +408,7 @@ export async function updateMaterial(id: string, payload: MaterialPayload): Prom
         name: updated.name,
         sku: updated.sku,
         unit: updated.unit,
-        quantity: balance._sum.quantity ?? 0,
+        quantity,
         minStock: updated.minStock,
         notes: updated.notes
       }
