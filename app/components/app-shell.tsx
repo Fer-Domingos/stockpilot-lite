@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { Navigation } from '@/app/components/navigation';
+import { logoutAction } from '@/app/logout/actions';
 import { AppRole, rolePermissions } from '@/lib/demo-data';
 
 export function AppShell({ children, role }: { children: React.ReactNode; role: AppRole }) {
@@ -22,6 +23,11 @@ export function AppShell({ children, role }: { children: React.ReactNode; role: 
             >
               Switch to {isEngineer ? 'Admin' : 'Engineer / PM'}
             </Link>
+            <form className="inline-form" action={logoutAction}>
+              <button className="ghost-button logout-button" type="submit">
+                Logout
+              </button>
+            </form>
           </div>
         </header>
         <div className="role-note card">
