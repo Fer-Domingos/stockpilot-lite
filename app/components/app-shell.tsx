@@ -23,8 +23,8 @@ export function AppShell({ children, role }: { children: React.ReactNode; role: 
             >
               Switch to {isEngineer ? 'Admin' : 'Engineer / PM'}
             </Link>
-            <form className="inline-form" action={logoutAction}>
-              <button className="ghost-button logout-button" type="submit">
+            <form className="logout-form" action={logoutAction}>
+              <button className="logout-button" type="submit" aria-label="Log out and return to login">
                 Logout
               </button>
             </form>

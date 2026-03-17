@@ -99,7 +99,9 @@ a {
 .header-actions {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 12px;
+  flex-wrap: wrap;
 }
 
 .role-pill {
@@ -127,8 +129,22 @@ a {
   font-size: 0.86rem;
 }
 
+.logout-form {
+  margin: 0;
+}
+
 .logout-button {
   width: auto;
+  border: 1px solid #b91c1c;
+  background: #dc2626;
+  color: #fff;
+  padding: 8px 14px;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.logout-button:hover {
+  background: #b91c1c;
 }
 
 .role-note {
