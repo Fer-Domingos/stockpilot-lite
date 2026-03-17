@@ -8,7 +8,42 @@ export const dynamic = 'force-dynamic';
 export default async function HistoryPage({ searchParams }: { searchParams: { role?: string } }) {
   noStore();
   const role = getRole(searchParams.role);
-  const { data: transactions } = await listInventoryTransactions();
+  const historyResponse = await listInventoryTransactions();
+  const rawTransactions =
+    (historyResponse as { data?: unknown[]; transactions?: unknown[] }).data ??
+    (historyResponse as { data?: unknown[]; transactions?: unknown[] }).transactions ??
+    [];
+  const transactions = rawTransactions.map((entry) => {
+    const row = entry as {
+      id: string;
+      createdAt: string;
+      type?: string;
+      transactionType?: string;
+      materialName: string;
+      quantity: number;
+      unit: string;
+      locationFrom?: string | null;
+      locationTo?: string | null;
+      invoiceNumber?: string | null;
+      vendorName?: string | null;
+      vendor?: string | null;
+      notes?: string | null;
+    };
+
+    return {
+      id: row.id,
+      createdAt: row.createdAt,
+      type: row.type ?? row.transactionType ?? '—',
+      materialName: row.materialName,
+      locationFrom: row.locationFrom ?? '—',
+      locationTo: row.locationTo ?? '—',
+      quantity: row.quantity,
+      unit: row.unit,
+      invoiceNumber: row.invoiceNumber ?? '—',
+      vendorName: row.vendorName ?? row.vendor ?? '—',
+      notes: row.notes ?? '—'
+    };
+  });
 
   return (
     <AppShell role={role}>
