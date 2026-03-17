@@ -31,14 +31,6 @@ export async function GET() {
         }
       },
       include: {
-        material: {
-          select: {
-            id: true,
-            name: true,
-            sku: true,
-            unit: true
-          }
-        },
         locationFromJob: {
           select: {
             id: true,
@@ -59,19 +51,38 @@ export async function GET() {
       }
     });
 
+    const materialIds = Array.from(new Set(transactions.map((entry) => entry.materialId)));
+    const materials = materialIds.length
+      ? await prisma.material.findMany({
+          where: {
+            id: {
+              in: materialIds
+            }
+          },
+          select: {
+            id: true,
+            name: true,
+            sku: true,
+            unit: true
+          }
+        })
+      : [];
+    const materialsById = new Map(materials.map((material) => [material.id, material]));
+
     const rows = transactions.map((entry) => {
       const fromJobLabel = formatJobLabel(entry.locationFromJob);
       const toJobLabel = formatJobLabel(entry.locationToJob);
+      const material = materialsById.get(entry.materialId);
 
       return {
         id: entry.id,
         createdAt: entry.createdAt.toISOString(),
         type: entry.transactionType,
         materialId: entry.materialId,
-        materialSku: entry.material.sku,
-        materialName: entry.material.name,
+        materialSku: material?.sku ?? null,
+        materialName: material?.name ?? 'Unknown material',
         quantity: entry.quantity,
-        unit: entry.material.unit,
+        unit: material?.unit ?? null,
         locationFrom: entry.locationFromType === 'SHOP' ? 'Shop' : fromJobLabel ?? 'Job',
         locationTo:
           entry.transactionType === 'ISSUE'
