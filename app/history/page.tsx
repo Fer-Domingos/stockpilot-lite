@@ -1,49 +1,61 @@
 import { AppShell } from '@/app/components/app-shell';
-import { listInventoryTransactions } from '@/app/actions';
 import { getRole } from '@/lib/role';
 import { unstable_noStore as noStore } from 'next/cache';
+import { headers } from 'next/headers';
 
 export const dynamic = 'force-dynamic';
+
+type HistoryRow = {
+  id: string;
+  createdAt: string;
+  type?: string;
+  transactionType?: string;
+  materialName: string;
+  quantity: number;
+  unit: string;
+  locationFrom?: string | null;
+  locationTo?: string | null;
+  invoiceNumber?: string | null;
+  vendorName?: string | null;
+  vendor?: string | null;
+  notes?: string | null;
+};
 
 export default async function HistoryPage({ searchParams }: { searchParams: { role?: string } }) {
   noStore();
   const role = getRole(searchParams.role);
-  const historyResponse = await listInventoryTransactions();
-  const rawTransactions =
-    (historyResponse as { data?: unknown[]; transactions?: unknown[] }).data ??
-    (historyResponse as { data?: unknown[]; transactions?: unknown[] }).transactions ??
-    [];
-  const transactions = rawTransactions.map((entry) => {
-    const row = entry as {
-      id: string;
-      createdAt: string;
-      type?: string;
-      transactionType?: string;
-      materialName: string;
-      quantity: number;
-      unit: string;
-      locationFrom?: string | null;
-      locationTo?: string | null;
-      invoiceNumber?: string | null;
-      vendorName?: string | null;
-      vendor?: string | null;
-      notes?: string | null;
-    };
 
-    return {
-      id: row.id,
-      createdAt: row.createdAt,
-      type: row.type ?? row.transactionType ?? '—',
-      materialName: row.materialName,
-      locationFrom: row.locationFrom ?? '—',
-      locationTo: row.locationTo ?? '—',
-      quantity: row.quantity,
-      unit: row.unit,
-      invoiceNumber: row.invoiceNumber ?? '—',
-      vendorName: row.vendorName ?? row.vendor ?? '—',
-      notes: row.notes ?? '—'
-    };
-  });
+  const requestHeaders = await headers();
+  const host = requestHeaders.get('x-forwarded-host') ?? requestHeaders.get('host');
+  const protocol = requestHeaders.get('x-forwarded-proto') ?? 'http';
+  const origin = host ? `${protocol}://${host}` : '';
+
+  let rawTransactions: HistoryRow[] = [];
+
+  try {
+    const response = await fetch(`${origin}/api/history`, { cache: 'no-store' });
+
+    if (response.ok) {
+      const historyResponse = (await response.json()) as { data?: HistoryRow[]; transactions?: HistoryRow[] };
+      rawTransactions = historyResponse.data ?? historyResponse.transactions ?? [];
+    }
+  } catch (error) {
+    console.error('Failed to load history rows from /api/history:', error);
+  }
+
+  const transactions = rawTransactions.map((row) => ({
+    id: row.id,
+    createdAt: row.createdAt,
+    type: row.type ?? row.transactionType ?? '—',
+    materialName: row.materialName,
+    locationFrom: row.locationFrom ?? '—',
+    locationTo: row.locationTo ?? '—',
+    quantity: row.quantity,
+    unit: row.unit,
+    invoiceNumber: row.invoiceNumber ?? '—',
+    vendorName: row.vendorName ?? row.vendor ?? '—',
+    notes: row.notes ?? '—'
+  }));
 
   return (
     <AppShell role={role}>
