@@ -318,3 +318,23 @@ form {
 .inline-form {
   display: block;
 }
+
+.job-breakdown {
+  margin-top: 8px;
+}
+
+.job-breakdown summary {
+  cursor: pointer;
+  color: #0f766e;
+  font-size: 0.82rem;
+}
+
+.nested-table {
+  margin-top: 8px;
+}
+
+.nested-table th,
+.nested-table td {
+  padding: 6px 8px;
+  font-size: 0.84rem;
+}
