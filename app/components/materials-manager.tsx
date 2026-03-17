@@ -167,70 +167,72 @@ export function MaterialsManager({
             Add Material
           </button>
         </div>
-        <table>
-          <thead>
-            <tr>
-              <th>Material Name</th>
-              <th>SKU</th>
-              <th>Unit</th>
-              <th>Minimum Stock</th>
-              <th>Notes</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {materials.map((material) => (
-              <tr key={material.id}>
-                <td>{material.name}</td>
-                <td>{material.sku}</td>
-                <td>{material.unit}</td>
-                <td>{material.minStock}</td>
-                <td>{material.notes || '—'}</td>
-                <td>
-                  <div className="row-actions">
-                    <button
-                      className="secondary-button"
-                      type="button"
-                      onClick={() => {
-                        setEditingId(material.id);
-                        setForm({
-                          name: material.name,
-                          sku: material.sku,
-                          unit: material.unit,
-                          minStock: material.minStock,
-                          notes: material.notes
-                        });
-                      }}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      className="danger-button"
-                      type="button"
-                      disabled={isPending}
-                      onClick={() => {
-                        setError('');
-
-                        startTransition(async () => {
-                          const result = await deleteMaterial(material.id);
-
-                          if (!result.ok) {
-                            setError(result.error ?? 'Failed to delete material.');
-                            return;
-                          }
-
-                          setMaterials((current) => current.filter((entry) => entry.id !== material.id));
-                        });
-                      }}
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </td>
+        <div className="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Material Name</th>
+                <th>SKU</th>
+                <th>Unit</th>
+                <th>Minimum Stock</th>
+                <th>Notes</th>
+                <th>Actions</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {materials.map((material) => (
+                <tr key={material.id}>
+                  <td>{material.name}</td>
+                  <td>{material.sku}</td>
+                  <td>{material.unit}</td>
+                  <td>{material.minStock}</td>
+                  <td>{material.notes || '—'}</td>
+                  <td>
+                    <div className="row-actions">
+                      <button
+                        className="secondary-button"
+                        type="button"
+                        onClick={() => {
+                          setEditingId(material.id);
+                          setForm({
+                            name: material.name,
+                            sku: material.sku,
+                            unit: material.unit,
+                            minStock: material.minStock,
+                            notes: material.notes
+                          });
+                        }}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        className="danger-button"
+                        type="button"
+                        disabled={isPending}
+                        onClick={() => {
+                          setError('');
+
+                          startTransition(async () => {
+                            const result = await deleteMaterial(material.id);
+
+                            if (!result.ok) {
+                              setError(result.error ?? 'Failed to delete material.');
+                              return;
+                            }
+
+                            setMaterials((current) => current.filter((entry) => entry.id !== material.id));
+                          });
+                        }}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </section>
     </>
   );
