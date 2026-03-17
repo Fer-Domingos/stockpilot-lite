@@ -1,8 +1,12 @@
 import { AppShell } from '@/app/components/app-shell';
 import { listInventoryTransactions } from '@/app/actions';
 import { getRole } from '@/lib/role';
+import { unstable_noStore as noStore } from 'next/cache';
+
+export const dynamic = 'force-dynamic';
 
 export default async function HistoryPage({ searchParams }: { searchParams: { role?: string } }) {
+  noStore();
   const role = getRole(searchParams.role);
   const { data: transactions } = await listInventoryTransactions();
 
@@ -28,21 +32,29 @@ export default async function HistoryPage({ searchParams }: { searchParams: { ro
             </tr>
           </thead>
           <tbody>
-            {transactions.map((entry) => (
-              <tr key={entry.id}>
-                <td>{new Date(entry.createdAt).toLocaleString()}</td>
-                <td>{entry.type}</td>
-                <td>{entry.materialName}</td>
-                <td>{entry.locationFrom}</td>
-                <td>{entry.locationTo}</td>
-                <td>
-                  {entry.quantity} {entry.unit}
+            {transactions.length === 0 ? (
+              <tr>
+                <td colSpan={9} className="muted" style={{ textAlign: 'center' }}>
+                  No transactions found yet.
                 </td>
-                <td>{entry.invoiceNumber}</td>
-                <td>{entry.vendorName}</td>
-                <td>{entry.notes}</td>
               </tr>
-            ))}
+            ) : (
+              transactions.map((entry) => (
+                <tr key={entry.id}>
+                  <td>{new Date(entry.createdAt).toLocaleString()}</td>
+                  <td>{entry.type}</td>
+                  <td>{entry.materialName}</td>
+                  <td>{entry.locationFrom}</td>
+                  <td>{entry.locationTo}</td>
+                  <td>
+                    {entry.quantity} {entry.unit}
+                  </td>
+                  <td>{entry.invoiceNumber}</td>
+                  <td>{entry.vendorName}</td>
+                  <td>{entry.notes}</td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </section>
