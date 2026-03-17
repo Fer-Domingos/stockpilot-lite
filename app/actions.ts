@@ -658,6 +658,8 @@ export async function receiveMaterial(formData: FormData) {
         message = 'Receipt references a missing material or job record.';
       } else if (error.code === 'P2011') {
         message = `A required receive field is missing in the database write (${error.meta?.constraint ?? 'unknown constraint'}).`;
+      } else if (error.code === 'P2021') {
+        message = `Database schema is out of date (missing table: ${String(error.meta?.table ?? 'unknown')}). Run Prisma migrations.`;
       } else if (error.code === 'P2022') {
         message = `Database schema is out of date (missing column: ${String(error.meta?.column ?? 'unknown')}). Run Prisma migrations.`;
       }
