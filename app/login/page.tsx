@@ -1,23 +1,30 @@
-import Link from 'next/link';
+import { loginAction } from '@/app/login/actions';
 
-export default function LoginPage() {
+export default function LoginPage({
+  searchParams
+}: {
+  searchParams?: { error?: string };
+}) {
+  const hasError = searchParams?.error === 'invalid_credentials';
+
   return (
     <div className="login-wrap">
       <div className="card login-card">
         <p className="brand-kicker">StockPilot</p>
         <h1>Cabinet Inventory Cloud</h1>
-        <p>Demo login for a professional inventory SaaS experience.</p>
-        <form action="/dashboard">
+        <p>Sign in with your admin account.</p>
+        <form action={loginAction}>
           <label htmlFor="email">Work Email</label>
-          <input id="email" type="email" placeholder="manager@cabinetco.com" required />
+          <input id="email" name="email" type="email" placeholder="admin@stockpilot.com" required />
           <label htmlFor="password">Password</label>
-          <input id="password" type="password" placeholder="••••••••" required />
-          <button type="submit">Sign in to Demo</button>
+          <input id="password" name="password" type="password" placeholder="••••••••" required />
+          <button type="submit">Sign in</button>
         </form>
-        <p className="muted" style={{ marginTop: '12px' }}>
-          Quick access: <Link href="/dashboard?role=Admin">Admin</Link> ·{' '}
-          <Link href="/dashboard?role=Engineer%20%2F%20PM">Engineer / PM</Link>
-        </p>
+        {hasError ? (
+          <p className="muted" style={{ marginTop: '12px', color: '#b42318' }}>
+            Invalid email or password.
+          </p>
+        ) : null}
       </div>
     </div>
   );

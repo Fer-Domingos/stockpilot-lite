@@ -1,6 +1,13 @@
+import { randomBytes, scryptSync } from 'crypto';
 import { JobStatus, PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
+
+
+function hashPassword(password: string, salt = randomBytes(16).toString('hex')) {
+  const hash = scryptSync(password, salt, 64).toString('hex');
+  return `${salt}:${hash}`;
+}
 
 async function main() {
   const materials = [
@@ -49,6 +56,15 @@ async function main() {
       create: material
     });
   }
+
+  await prisma.adminUser.upsert({
+    where: { email: 'admin@stockpilot.com' },
+    update: {},
+    create: {
+      email: 'admin@stockpilot.com',
+      passwordHash: hashPassword('123456')
+    }
+  });
 
   for (const job of jobs) {
     await prisma.job.upsert({
