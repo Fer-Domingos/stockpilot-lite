@@ -539,6 +539,8 @@ export async function receiveMaterial(formData: FormData) {
   const photoUrl = String(formData.get('photoUrl') ?? '').trim();
   const quantity = Number(formData.get('quantity') ?? 0);
 
+  const missingFields: string[] = [];
+
   let destinationType: 'SHOP' | 'JOB' = 'SHOP';
   let jobId: string | null = null;
   let hasValidDestination = true;
@@ -557,8 +559,29 @@ export async function receiveMaterial(formData: FormData) {
     jobId = legacyJobId || null;
   }
 
-  if (!materialId || !Number.isFinite(quantity) || quantity <= 0 || !hasValidDestination || !['SHOP', 'JOB'].includes(destinationType)) {
-    redirect('/receive-materials?error=missing-required-fields');
+  if (!materialId) {
+    missingFields.push('material');
+  }
+
+  if (!Number.isFinite(quantity) || quantity <= 0) {
+    missingFields.push('quantity');
+  }
+
+  if (!hasValidDestination || !['SHOP', 'JOB'].includes(destinationType)) {
+    missingFields.push('destination');
+  }
+
+  if (!invoiceNumber) {
+    missingFields.push('invoice number');
+  }
+
+  if (!vendorName) {
+    missingFields.push('vendor');
+  }
+
+  if (missingFields.length > 0) {
+    const message = encodeURIComponent(`Missing required fields: ${missingFields.join(', ')}.`);
+    redirect(`/receive-materials?error=missing-required-fields&message=${message}`);
   }
 
   if (destinationType === 'JOB' && !jobId) {
@@ -568,15 +591,27 @@ export async function receiveMaterial(formData: FormData) {
   const normalizedQuantity = Math.floor(quantity);
   const receivedAt = new Date();
 
+  const material = await prisma.material.findUnique({
+    where: { id: materialId },
+    select: { id: true }
+  });
+
+  if (!material) {
+    redirect('/receive-materials?error=invalid-material&message=Selected%20material%20was%20not%20found.');
+  }
+
+  if (destinationType === 'JOB' && jobId) {
+    const job = await prisma.job.findUnique({ where: { id: jobId } });
+    if (!job) {
+      redirect('/receive-materials?error=invalid-job&message=Destination%20job%20was%20not%20found.');
+    }
+    if (job.status !== 'OPEN') {
+      redirect('/receive-materials?error=invalid-job&message=Destination%20job%20must%20be%20open.');
+    }
+  }
+
   try {
     await prisma.$transaction(async (tx) => {
-      if (destinationType === 'JOB' && jobId) {
-        const job = await tx.job.findUnique({ where: { id: jobId } });
-        if (!job || job.status !== 'OPEN') {
-          throw new Error('Destination job must be open.');
-        }
-      }
-
       await adjustInventoryBalance(tx, materialId, destinationType, destinationType === 'JOB' ? jobId : null, normalizedQuantity);
 
       await tx.receivingRecord.create({
@@ -613,12 +648,30 @@ export async function receiveMaterial(formData: FormData) {
 
     await syncMaterialQuantitiesFromBalances();
   } catch (error) {
-    console.error('Failed to receive material:', error);
-    redirect('/receive-materials?error=save-failed');
+    let message = 'Unable to save receipt right now.';
+
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      if (error.code === 'P2003') {
+        message = 'Receipt references a missing material or job record.';
+      } else if (error.code === 'P2011') {
+        message = 'A required receive field is missing in the database write.';
+      } else if (error.code === 'P2022') {
+        message = 'Database schema is out of date. Run Prisma migrations.';
+      }
+    } else if (error instanceof Error && error.message) {
+      message = error.message;
+    }
+
+    console.error('Failed to receive material:', {
+      message,
+      error
+    });
+    redirect(`/receive-materials?error=save-failed&message=${encodeURIComponent(message)}`);
   }
 
   revalidatePath('/dashboard');
   revalidatePath('/materials');
+  revalidatePath('/inventory');
   revalidatePath('/history');
   revalidatePath('/receive-materials');
   revalidatePath('/issue-materials');
