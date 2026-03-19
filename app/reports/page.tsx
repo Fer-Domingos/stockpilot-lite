@@ -111,7 +111,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Repo
           <div className="reports-filter-actions">
             <button type="submit">Apply filter</button>
             <a className="ghost-button" href={`/reports/export${activeQuery ? `?${activeQuery}` : ''}`}>
-              Export CSV
+              Export Excel
             </a>
             <a className="ghost-button" href={`/reports/export/pdf${activeQuery ? `?${activeQuery}` : ''}`}>
               Export PDF
