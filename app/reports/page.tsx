@@ -113,6 +113,9 @@ export default async function ReportsPage({ searchParams }: { searchParams: Repo
             <a className="ghost-button" href={`/reports/export${activeQuery ? `?${activeQuery}` : ''}`}>
               Export CSV
             </a>
+            <a className="ghost-button" href={`/reports/export/pdf${activeQuery ? `?${activeQuery}` : ''}`}>
+              Export PDF
+            </a>
             <a className="ghost-button reports-reset-link" href={`/reports?role=${encodeURIComponent(role)}`}>
               Clear
             </a>
