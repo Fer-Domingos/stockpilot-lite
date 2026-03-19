@@ -47,13 +47,13 @@ function buildMetadataRows(data: Awaited<ReturnType<typeof getReportsData>>['dat
 function buildSummarySheet(data: Awaited<ReturnType<typeof getReportsData>>['data']): SheetDefinition {
   const rows: CellValue[][] = [];
 
-  appendRow(rows, ['StockPilot Report', '', '', '']);
+  appendRow(rows, ['StockPilot Report']);
   appendRow(rows, []);
   for (const row of buildMetadataRows(data)) {
     appendRow(rows, row);
   }
   appendRow(rows, []);
-  appendRow(rows, ['Summary Overview', '', '', '']);
+  appendRow(rows, ['Summary']);
   appendRow(rows, ['Materials Tracked', 'Transactions in Range', 'Issued Units in Range', 'Receipts in Range']);
   appendRow(rows, [
     data.inventorySummary.materialCount,
@@ -65,15 +65,13 @@ function buildSummarySheet(data: Awaited<ReturnType<typeof getReportsData>>['dat
   return {
     name: 'Summary',
     rows,
-    merges: ['A1:D1', 'A8:D8'],
-    freezePane: 'A8',
-    autoFilter: 'A9:D10',
+    freezePane: 'A11',
+    autoFilter: 'A10:D11',
     minColumnWidth: 18,
     metadataRows: [3, 4, 5, 6, 7],
     titleRow: 1,
-    sectionRows: [8],
-    tableHeaderRows: [9],
-    zebraRanges: [{ startRow: 10, endRow: 10 }],
+    sectionRows: [9],
+    tableHeaderRows: [10],
     rightAlignedColumns: [0, 1, 2, 3]
   };
 }
@@ -81,13 +79,13 @@ function buildSummarySheet(data: Awaited<ReturnType<typeof getReportsData>>['dat
 function buildInventorySheet(data: Awaited<ReturnType<typeof getReportsData>>['data']): SheetDefinition {
   const rows: CellValue[][] = [];
 
-  appendRow(rows, ['StockPilot Report', '', '', '', '', '']);
+  appendRow(rows, ['StockPilot Report']);
   appendRow(rows, []);
   for (const row of buildMetadataRows(data)) {
     appendRow(rows, row);
   }
   appendRow(rows, []);
-  appendRow(rows, ['Inventory Report', '', '', '', '', '']);
+  appendRow(rows, ['Inventory']);
   appendRow(rows, ['Material', 'SKU', 'Unit', 'Shop Quantity', 'Total Job Quantity', 'Total Inventory']);
 
   if (data.inventorySummary.rows.length === 0) {
@@ -101,15 +99,13 @@ function buildInventorySheet(data: Awaited<ReturnType<typeof getReportsData>>['d
   return {
     name: 'Inventory',
     rows,
-    merges: ['A1:F1', 'A8:F8'],
-    freezePane: 'A8',
-    autoFilter: `A9:F${rows.length}`,
+    freezePane: 'A11',
+    autoFilter: `A10:F${rows.length}`,
     minColumnWidth: 14,
     metadataRows: [3, 4, 5, 6, 7],
     titleRow: 1,
-    sectionRows: [8],
-    tableHeaderRows: [9],
-    zebraRanges: rows.length > 9 ? [{ startRow: 10, endRow: rows.length }] : [],
+    sectionRows: [9],
+    tableHeaderRows: [10],
     rightAlignedColumns: [3, 4, 5]
   };
 }
@@ -117,13 +113,13 @@ function buildInventorySheet(data: Awaited<ReturnType<typeof getReportsData>>['d
 function buildMostUsedSheet(data: Awaited<ReturnType<typeof getReportsData>>['data']): SheetDefinition {
   const rows: CellValue[][] = [];
 
-  appendRow(rows, ['StockPilot Report', '', '', '', '']);
+  appendRow(rows, ['StockPilot Report']);
   appendRow(rows, []);
   for (const row of buildMetadataRows(data)) {
     appendRow(rows, row);
   }
   appendRow(rows, []);
-  appendRow(rows, ['Most Used Materials', '', '', '', '']);
+  appendRow(rows, ['Most Used Materials']);
   appendRow(rows, ['Material', 'SKU', 'Issue Transactions', 'Total Issued', 'Unit']);
 
   if (data.topMaterials.length === 0) {
@@ -137,15 +133,13 @@ function buildMostUsedSheet(data: Awaited<ReturnType<typeof getReportsData>>['da
   return {
     name: 'Most Used',
     rows,
-    merges: ['A1:E1', 'A8:E8'],
-    freezePane: 'A8',
-    autoFilter: `A9:E${rows.length}`,
+    freezePane: 'A11',
+    autoFilter: `A10:E${rows.length}`,
     minColumnWidth: 14,
     metadataRows: [3, 4, 5, 6, 7],
     titleRow: 1,
-    sectionRows: [8],
-    tableHeaderRows: [9],
-    zebraRanges: rows.length > 9 ? [{ startRow: 10, endRow: rows.length }] : [],
+    sectionRows: [9],
+    tableHeaderRows: [10],
     rightAlignedColumns: [2, 3]
   };
 }
@@ -153,13 +147,13 @@ function buildMostUsedSheet(data: Awaited<ReturnType<typeof getReportsData>>['da
 function buildActivitySheet(data: Awaited<ReturnType<typeof getReportsData>>['data']): SheetDefinition {
   const rows: CellValue[][] = [];
 
-  appendRow(rows, ['StockPilot Report', '', '', '', '', '', '', '', '', '', '']);
+  appendRow(rows, ['StockPilot Report']);
   appendRow(rows, []);
   for (const row of buildMetadataRows(data)) {
     appendRow(rows, row);
   }
   appendRow(rows, []);
-  appendRow(rows, ['Recent Activity', '', '', '', '', '', '', '', '', '', '']);
+  appendRow(rows, ['Recent Activity']);
   appendRow(rows, ['Date', 'Type', 'Material', 'SKU', 'Quantity', 'Unit', 'From', 'To', 'Invoice', 'Vendor', 'Notes']);
 
   if (data.recentActivity.length === 0) {
@@ -185,15 +179,13 @@ function buildActivitySheet(data: Awaited<ReturnType<typeof getReportsData>>['da
   return {
     name: 'Activity',
     rows,
-    merges: ['A1:K1', 'A8:K8'],
-    freezePane: 'A8',
-    autoFilter: `A9:K${rows.length}`,
+    freezePane: 'A11',
+    autoFilter: `A10:K${rows.length}`,
     minColumnWidth: 12,
     metadataRows: [3, 4, 5, 6, 7],
     titleRow: 1,
-    sectionRows: [8],
-    tableHeaderRows: [9],
-    zebraRanges: rows.length > 9 ? [{ startRow: 10, endRow: rows.length }] : [],
+    sectionRows: [9],
+    tableHeaderRows: [10],
     rightAlignedColumns: [4]
   };
 }
