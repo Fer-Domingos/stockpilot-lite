@@ -1,8 +1,13 @@
+import { unstable_noStore as noStore } from 'next/cache';
 import { NextResponse } from 'next/server';
 
 import { prisma } from '@/lib/prisma';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
+  noStore();
+
   try {
     const transactions = await prisma.inventoryTransaction.findMany({
       orderBy: { createdAt: 'desc' }
