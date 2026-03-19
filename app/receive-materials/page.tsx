@@ -3,6 +3,8 @@ import { ReceiveMaterialForm } from '@/app/components/receive-material-form';
 import { listJobs, listMaterials, listReceivingRecords } from '@/app/actions';
 import { getRole } from '@/lib/role';
 
+export const dynamic = 'force-dynamic';
+
 const errorMessages: Record<string, string> = {
   'missing-required-fields': 'Material, quantity, destination, invoice number, and vendor are required.',
   'job-required-for-job-destination': 'Please select a destination job when destination is Job.',

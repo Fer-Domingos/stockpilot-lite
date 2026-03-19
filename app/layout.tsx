@@ -1,6 +1,5 @@
 import './globals.css';
 import type { Metadata } from 'next';
-import { DemoStoreProvider } from '@/app/components/demo-store-provider';
 
 export const metadata: Metadata = {
   title: 'StockPilot Lite',
@@ -10,9 +9,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body>
-        <DemoStoreProvider>{children}</DemoStoreProvider>
-      </body>
+      <body>{children}</body>
     </html>
   );
 }

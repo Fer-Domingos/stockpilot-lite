@@ -3,6 +3,8 @@ import { TransferMaterialForm } from '@/app/components/transfer-material-form';
 import { listJobs, listMaterials } from '@/app/actions';
 import { getRole } from '@/lib/role';
 
+export const dynamic = 'force-dynamic';
+
 const errorMessages: Record<string, string> = {
   'invalid-transfer': 'Material, source, destination, and quantity are required.',
   'save-failed': 'Unable to transfer stock. Verify available source stock and try again.'
