@@ -85,6 +85,11 @@ type ParsedLocation = {
   jobId: string | null;
 };
 
+type TransactionLocationInput = {
+  locationType: InventoryLocationType | null;
+  jobId: string | null;
+};
+
 const statuses: JobStatus[] = ['OPEN', 'CLOSED'];
 const materialUnits = ['UNIT', 'SHEETS'] as const;
 
@@ -186,6 +191,31 @@ function parseLocation(locationValue: string): ParsedLocation | null {
   }
 
   return null;
+}
+
+function normalizeTransactionLocation(
+  fieldName: 'locationFromType' | 'locationToType',
+  input: TransactionLocationInput
+): TransactionLocationInput {
+  const { locationType, jobId } = input;
+
+  if (locationType === null) {
+    return { locationType: null, jobId: null };
+  }
+
+  if (locationType === 'SHOP') {
+    return { locationType: 'SHOP', jobId: null };
+  }
+
+  if (locationType === 'JOB') {
+    if (!jobId) {
+      throw new Error(`${fieldName} cannot be JOB without a job id.`);
+    }
+
+    return { locationType: 'JOB', jobId };
+  }
+
+  throw new Error(`${fieldName} must be SHOP, JOB, or null.`);
 }
 
 function formatLocationLabel(
@@ -613,6 +643,10 @@ export async function receiveMaterial(formData: FormData) {
   try {
     await prisma.$transaction(async (tx) => {
       const destinationJobId = destinationType === 'JOB' ? jobId : null;
+      const normalizedToLocation = normalizeTransactionLocation('locationToType', {
+        locationType: destinationType,
+        jobId: destinationJobId
+      });
 
       const receipt = await tx.receivingRecord.create({
         data: {
@@ -637,8 +671,8 @@ export async function receiveMaterial(formData: FormData) {
           quantity: normalizedQuantity,
           locationFromType: null,
           locationFromJobId: null,
-          locationToType: destinationType,
-          locationToJobId: destinationJobId,
+          locationToType: normalizedToLocation.locationType,
+          locationToJobId: normalizedToLocation.jobId,
           invoiceNumber: invoiceNumber || null,
           vendor: vendor || null,
           notes: notes || null,
@@ -739,6 +773,15 @@ export async function transferMaterial(formData: FormData) {
 
   try {
     await prisma.$transaction(async (tx) => {
+      const normalizedFromLocation = normalizeTransactionLocation('locationFromType', {
+        locationType: source.locationType,
+        jobId: source.jobId
+      });
+      const normalizedToLocation = normalizeTransactionLocation('locationToType', {
+        locationType: destination.locationType,
+        jobId: destination.jobId
+      });
+
       if (source.locationType === 'JOB' && source.jobId) {
         const sourceJob = await tx.job.findUnique({ where: { id: source.jobId } });
         if (!sourceJob || sourceJob.status !== 'OPEN') {
@@ -761,10 +804,10 @@ export async function transferMaterial(formData: FormData) {
           materialId,
           transactionType: 'TRANSFER',
           quantity: normalizedQuantity,
-          locationFromType: source.locationType,
-          locationFromJobId: source.jobId,
-          locationToType: destination.locationType,
-          locationToJobId: destination.jobId,
+          locationFromType: normalizedFromLocation.locationType,
+          locationFromJobId: normalizedFromLocation.jobId,
+          locationToType: normalizedToLocation.locationType,
+          locationToJobId: normalizedToLocation.jobId,
           notes: notes || null
         }
       });
@@ -799,6 +842,11 @@ export async function issueMaterial(formData: FormData) {
 
   try {
     await prisma.$transaction(async (tx) => {
+      const normalizedFromLocation = normalizeTransactionLocation('locationFromType', {
+        locationType: source.locationType,
+        jobId: source.jobId
+      });
+
       if (source.locationType === 'JOB' && source.jobId) {
         const sourceJob = await tx.job.findUnique({ where: { id: source.jobId } });
         if (!sourceJob || sourceJob.status !== 'OPEN') {
@@ -813,8 +861,8 @@ export async function issueMaterial(formData: FormData) {
           materialId,
           transactionType: 'ISSUE',
           quantity: normalizedQuantity,
-          locationFromType: source.locationType,
-          locationFromJobId: source.jobId,
+          locationFromType: normalizedFromLocation.locationType,
+          locationFromJobId: normalizedFromLocation.jobId,
           locationToType: null,
           locationToJobId: null,
           notes: notes || null
