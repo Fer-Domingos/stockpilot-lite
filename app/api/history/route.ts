@@ -73,29 +73,43 @@ export async function GET() {
       const fromJobLabel = formatJobLabel(entry.locationFromJob);
       const toJobLabel = formatJobLabel(entry.locationToJob);
       const material = materialsById.get(entry.materialId);
+      const createdAt = entry.createdAt.toISOString();
+      const transactionType = entry.transactionType;
+      const vendor = entry.vendor;
+      const notes = entry.notes;
+      const photoUrl = entry.photoUrl;
+      const locationFromType = entry.locationFromType;
+      const locationToType = entry.locationToType;
 
       return {
         id: entry.id,
-        createdAt: entry.createdAt.toISOString(),
-        type: entry.transactionType,
+        createdAt,
+        transactionType,
+        type: transactionType,
         materialId: entry.materialId,
         materialSku: material?.sku ?? null,
         materialName: material?.name ?? 'Unknown material',
         quantity: entry.quantity,
         unit: material?.unit ?? null,
-        locationFrom: entry.locationFromType === 'SHOP' ? 'Shop' : fromJobLabel ?? 'Job',
+        locationFromType,
+        locationToType,
+        locationFromJob: entry.locationFromJob,
+        locationToJob: entry.locationToJob,
+        locationFrom: locationFromType === 'SHOP' ? 'Shop' : fromJobLabel ?? 'Job',
         locationTo:
-          entry.transactionType === 'ISSUE'
+          transactionType === 'ISSUE'
             ? 'Production / Consumption'
-            : entry.locationToType === 'SHOP'
+            : locationToType === 'SHOP'
               ? 'Shop'
               : toJobLabel ?? 'Job',
         locationFromJobName: fromJobLabel,
         locationToJobName: toJobLabel,
         invoiceNumber: entry.invoiceNumber,
-        vendorName: entry.vendor,
-        notes: entry.notes,
-        hasPhoto: Boolean(entry.photoUrl)
+        vendor,
+        vendorName: vendor,
+        notes,
+        photoUrl,
+        hasPhoto: Boolean(photoUrl)
       };
     });
 
