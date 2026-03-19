@@ -3,8 +3,6 @@ import { IssueMaterialForm } from '@/app/components/issue-material-form';
 import { listJobs, listMaterials } from '@/app/actions';
 import { getRole } from '@/lib/role';
 
-export const dynamic = 'force-dynamic';
-
 const errorMessages: Record<string, string> = {
   'invalid-issue': 'Material, quantity, and source are required.',
   'save-failed': 'Unable to post issue. Verify available source stock and try again.'
