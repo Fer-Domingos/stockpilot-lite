@@ -71,6 +71,49 @@ export type DashboardView = {
   inventoryRows: InventoryAtGlanceRow[];
 };
 
+export type ReportsInventoryRow = {
+  materialId: string;
+  materialSku: string;
+  materialName: string;
+  unit: string;
+  shopQuantity: number;
+  totalJobQuantity: number;
+  totalQuantity: number;
+};
+
+export type TopUsedMaterialRow = {
+  materialId: string;
+  materialSku: string;
+  materialName: string;
+  unit: string;
+  issueCount: number;
+  issuedQuantity: number;
+};
+
+export type ReportsActivitySummary = {
+  totalTransactions: number;
+  receiveCount: number;
+  transferCount: number;
+  issueCount: number;
+  adjustmentCount: number;
+  receiveQuantity: number;
+  issueQuantity: number;
+};
+
+export type ReportsView = {
+  filters: {
+    startDate: string | null;
+    endDate: string | null;
+  };
+  inventorySummary: {
+    materialCount: number;
+    rows: ReportsInventoryRow[];
+  };
+  topMaterials: TopUsedMaterialRow[];
+  activitySummary: ReportsActivitySummary;
+  recentActivity: InventoryTransactionRecord[];
+};
+
 type ActionResult<T = undefined> = {
   ok: boolean;
   error?: string;
@@ -88,6 +131,11 @@ type ParsedLocation = {
 type TransactionLocationInput = {
   locationType: InventoryLocationType | null;
   jobId: string | null;
+};
+
+type ReportsFilterInput = {
+  startDate?: string;
+  endDate?: string;
 };
 
 const statuses: JobStatus[] = ['OPEN', 'CLOSED'];
@@ -235,6 +283,30 @@ function formatLocationLabel(
   }
 
   return 'Job';
+}
+
+function parseDateFilterBoundary(value: string | undefined, boundary: 'start' | 'end'): Date | null {
+  if (!value) {
+    return null;
+  }
+
+  const trimmed = value.trim();
+
+  if (!trimmed) {
+    return null;
+  }
+
+  const parsed = new Date(`${trimmed}T00:00:00.000Z`);
+
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  if (boundary === 'end') {
+    parsed.setUTCDate(parsed.getUTCDate() + 1);
+  }
+
+  return parsed;
 }
 
 async function adjustInventoryBalance(
@@ -1056,6 +1128,181 @@ export async function getDashboardData(): Promise<DashboardView> {
       totalInventoryUnits: 0,
       recentTransactions: [],
       inventoryRows: []
+    };
+  }
+}
+
+export async function getReportsData(filters: ReportsFilterInput = {}): Promise<{ data: ReportsView }> {
+  noStore();
+
+  const normalizedStartDate = filters.startDate?.trim() || null;
+  const normalizedEndDate = filters.endDate?.trim() || null;
+  const startDate = parseDateFilterBoundary(normalizedStartDate ?? undefined, 'start');
+  const endDateExclusive = parseDateFilterBoundary(normalizedEndDate ?? undefined, 'end');
+
+  const createdAtFilter: Prisma.DateTimeFilter = {};
+
+  if (startDate) {
+    createdAtFilter.gte = startDate;
+  }
+
+  if (endDateExclusive) {
+    createdAtFilter.lt = endDateExclusive;
+  }
+
+  const transactionWhere = Object.keys(createdAtFilter).length > 0 ? { createdAt: createdAtFilter } : undefined;
+
+  try {
+    const [inventoryBalances, transactions, issueGroups] = await Promise.all([
+      listInventoryBalances(),
+      prisma.inventoryTransaction.findMany({
+        where: transactionWhere,
+        include: {
+          material: true,
+          locationFromJob: true,
+          locationToJob: true
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 10
+      }),
+      prisma.inventoryTransaction.groupBy({
+        by: ['materialId'],
+        where: {
+          transactionType: 'ISSUE',
+          ...(transactionWhere ?? {})
+        },
+        _sum: { quantity: true },
+        _count: { _all: true },
+        orderBy: {
+          _sum: {
+            quantity: 'desc'
+          }
+        },
+        take: 5
+      })
+    ]);
+
+    const issueMaterialIds = issueGroups.map((entry) => entry.materialId);
+    const issueMaterials =
+      issueMaterialIds.length === 0
+        ? []
+        : await prisma.material.findMany({
+            where: { id: { in: issueMaterialIds } },
+            select: {
+              id: true,
+              sku: true,
+              name: true,
+              unit: true
+            }
+          });
+
+    const issueMaterialMap = new Map(issueMaterials.map((material) => [material.id, material]));
+
+    const inventoryRows: ReportsInventoryRow[] = inventoryBalances.data.map((row) => ({
+      materialId: row.materialId,
+      materialSku: row.materialSku,
+      materialName: row.materialName,
+      unit: row.unit,
+      shopQuantity: row.shopQuantity,
+      totalJobQuantity: row.jobQuantities.reduce((sum, entry) => sum + entry.quantity, 0),
+      totalQuantity: row.totalQuantity
+    }));
+
+    const topMaterials: TopUsedMaterialRow[] = issueGroups
+      .map((entry) => {
+        const material = issueMaterialMap.get(entry.materialId);
+
+        if (!material) {
+          return null;
+        }
+
+        return {
+          materialId: material.id,
+          materialSku: material.sku,
+          materialName: material.name,
+          unit: material.unit,
+          issueCount: entry._count._all,
+          issuedQuantity: Math.abs(entry._sum.quantity ?? 0)
+        };
+      })
+      .filter((entry): entry is TopUsedMaterialRow => entry !== null);
+
+    const recentActivity: InventoryTransactionRecord[] = transactions.map((entry) => ({
+      id: entry.id,
+      createdAt: entry.createdAt.toISOString(),
+      type: entry.transactionType,
+      materialSku: entry.material.sku,
+      materialName: entry.material.name,
+      quantity: entry.quantity,
+      unit: entry.material.unit,
+      locationFrom: formatLocationLabel(entry.locationFromType, entry.locationFromJob),
+      locationTo:
+        entry.transactionType === 'ISSUE'
+          ? 'Production / Consumption'
+          : formatLocationLabel(entry.locationToType, entry.locationToJob),
+      invoiceNumber: entry.invoiceNumber ?? '—',
+      vendorName: entry.vendor ?? '—',
+      notes: entry.notes ?? '—',
+      hasPhoto: Boolean(entry.photoUrl)
+    }));
+
+    const activityCounts = await prisma.inventoryTransaction.groupBy({
+      by: ['transactionType'],
+      where: transactionWhere,
+      _count: { _all: true },
+      _sum: { quantity: true }
+    });
+
+    const summaryByType = new Map(activityCounts.map((entry) => [entry.transactionType, entry]));
+
+    return {
+      data: {
+        filters: {
+          startDate: normalizedStartDate,
+          endDate: normalizedEndDate
+        },
+        inventorySummary: {
+          materialCount: inventoryRows.length,
+          rows: inventoryRows
+        },
+        topMaterials,
+        activitySummary: {
+          totalTransactions: activityCounts.reduce((sum, entry) => sum + entry._count._all, 0),
+          receiveCount: summaryByType.get('RECEIVE')?._count._all ?? 0,
+          transferCount: summaryByType.get('TRANSFER')?._count._all ?? 0,
+          issueCount: summaryByType.get('ISSUE')?._count._all ?? 0,
+          adjustmentCount: summaryByType.get('ADJUSTMENT')?._count._all ?? 0,
+          receiveQuantity: summaryByType.get('RECEIVE')?._sum.quantity ?? 0,
+          issueQuantity: Math.abs(summaryByType.get('ISSUE')?._sum.quantity ?? 0)
+        },
+        recentActivity
+      }
+    };
+  } catch (error) {
+    console.error('Failed to load reports data:', error);
+
+    return {
+      data: {
+        filters: {
+          startDate: normalizedStartDate,
+          endDate: normalizedEndDate
+        },
+        inventorySummary: {
+          materialCount: 0,
+          rows: []
+        },
+        topMaterials: [],
+        activitySummary: {
+          totalTransactions: 0,
+          receiveCount: 0,
+          transferCount: 0,
+          issueCount: 0,
+          adjustmentCount: 0,
+          receiveQuantity: 0,
+          issueQuantity: 0
+        },
+        recentActivity: []
+      }
     };
   }
 }

@@ -338,3 +338,40 @@ form {
   padding: 6px 8px;
   font-size: 0.84rem;
 }
+
+.reports-filter-header {
+  margin-bottom: 12px;
+}
+
+.reports-filter-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+.reports-filter-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.reports-reset-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+}
+
+.reports-two-column {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 14px;
+}
+
+.reports-activity-totals {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+}
