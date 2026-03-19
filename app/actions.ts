@@ -567,8 +567,6 @@ export async function deleteMaterial(id: string): Promise<ActionResult> {
 }
 
 export async function listJobs(): Promise<{ data: JobRecord[] }> {
-  noStore();
-
   try {
     const jobs = await prisma.job.findMany({
       orderBy: { createdAt: 'asc' }
@@ -814,8 +812,6 @@ export async function receiveMaterial(formData: FormData) {
 }
 
 export async function listReceivingRecords() {
-  noStore();
-
   try {
     const receipts = await prisma.receivingRecord.findMany({
       include: { material: true, job: true },
@@ -973,8 +969,6 @@ export async function issueMaterial(formData: FormData) {
 }
 
 export async function listInventoryBalances(): Promise<{ data: InventoryBalanceView[] }> {
-  noStore();
-
   try {
     const materials = await prisma.material.findMany({
       select: {
@@ -1055,8 +1049,6 @@ export async function listInventoryBalances(): Promise<{ data: InventoryBalanceV
 }
 
 export async function listInventoryTransactions(): Promise<{ data: InventoryTransactionRecord[] }> {
-  noStore();
-
   try {
     const transactions = await prisma.inventoryTransaction.findMany({
       include: {
@@ -1094,8 +1086,6 @@ export async function listInventoryTransactions(): Promise<{ data: InventoryTran
 }
 
 export async function getDashboardData(): Promise<DashboardView> {
-  noStore();
-
   try {
     const [totalSku, openJobs, onHandAggregate, materials, balanceSums, balances, txns] = await Promise.all([
       prisma.material.count(),

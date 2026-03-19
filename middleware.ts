@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { authConfig, encodeSession, getSessionCookieOptions, verifySessionToken } from '@/lib/session';
+import { authConfig, decodeSession } from '@/lib/session';
 
 const PUBLIC_PATHS = new Set(['/login']);
 
@@ -12,8 +12,7 @@ export async function middleware(request: NextRequest) {
   }
 
   const sessionToken = request.cookies.get(authConfig.sessionCookieName)?.value;
-  const verification = await verifySessionToken(sessionToken);
-  const session = verification?.payload ?? null;
+  const session = await decodeSession(sessionToken);
   const isPublic = PUBLIC_PATHS.has(pathname);
 
   if (!session && !isPublic) {
@@ -28,20 +27,7 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  const response = NextResponse.next();
-
-  if (verification?.needsRefresh && session) {
-    response.cookies.set(
-      authConfig.sessionCookieName,
-      await encodeSession({
-        email: session.email,
-        issuedAt: Date.now()
-      }),
-      getSessionCookieOptions()
-    );
-  }
-
-  return response;
+  return NextResponse.next();
 }
 
 export const config = {

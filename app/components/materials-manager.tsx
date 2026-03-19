@@ -1,7 +1,6 @@
 'use client';
 
 import { useMemo, useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
 
 import { MaterialRecord, createMaterial, deleteMaterial, updateMaterial } from '@/app/actions';
 
@@ -22,7 +21,6 @@ export function MaterialsManager({
 }: {
   initialMaterials: MaterialRecord[];
 }) {
-  const router = useRouter();
   const [materials, setMaterials] = useState<MaterialRecord[]>(initialMaterials);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<MaterialFormState>(emptyForm);
@@ -51,10 +49,6 @@ export function MaterialsManager({
       minStock: Math.max(0, Math.floor(payload.minStock)),
       notes: payload.notes.trim()
     };
-  }
-
-  function refreshServerData() {
-    router.refresh();
   }
 
   return (
@@ -109,7 +103,6 @@ export function MaterialsManager({
                 setMaterials((current) => [...current, createdMaterial]);
               }
 
-              refreshServerData();
               resetForm();
             });
           }}
@@ -235,7 +228,6 @@ export function MaterialsManager({
                             }
 
                             setMaterials((current) => current.filter((entry) => entry.id !== material.id));
-                            refreshServerData();
                           });
                         }}
                       >

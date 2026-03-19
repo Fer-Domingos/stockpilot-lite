@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
 
 import { JobRecord, JobStatus, createJob, deleteJob, updateJob } from '@/app/actions';
 
@@ -20,7 +19,6 @@ export function JobsManager({
 }: {
   initialJobs: JobRecord[];
 }) {
-  const router = useRouter();
   const [jobs, setJobs] = useState<JobRecord[]>(initialJobs);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<JobFormState>(emptyForm);
@@ -39,10 +37,6 @@ export function JobsManager({
       name: payload.name.trim(),
       status: statuses.includes(payload.status) ? payload.status : 'OPEN'
     };
-  }
-
-  function refreshServerData() {
-    router.refresh();
   }
 
   return (
@@ -97,7 +91,6 @@ export function JobsManager({
                 setJobs((current) => [...current, createdJob]);
               }
 
-              refreshServerData();
               resetForm();
             });
           }}
@@ -187,7 +180,6 @@ export function JobsManager({
                           }
 
                           setJobs((current) => current.filter((entry) => entry.id !== job.id));
-                          refreshServerData();
                         });
                       }}
                     >

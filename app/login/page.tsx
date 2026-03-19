@@ -1,7 +1,5 @@
 import { loginAction } from '@/app/login/actions';
 
-export const dynamic = 'force-dynamic';
-
 export default function LoginPage({
   searchParams
 }: {
