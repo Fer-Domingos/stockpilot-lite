@@ -357,6 +357,10 @@ form {
   flex-wrap: wrap;
 }
 
+.reports-filter-actions > * {
+  min-height: 42px;
+}
+
 .reports-reset-link {
   display: inline-flex;
   align-items: center;

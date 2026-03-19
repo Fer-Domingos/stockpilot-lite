@@ -8,6 +8,8 @@ type ReportsSearchParams = {
   role?: string;
   startDate?: string;
   endDate?: string;
+  jobId?: string;
+  materialId?: string;
 };
 
 function formatDate(value: string | null) {
@@ -24,11 +26,33 @@ function formatDate(value: string | null) {
   return parsed.toLocaleDateString();
 }
 
+function buildReportsQuery(params: ReportsSearchParams) {
+  const query = new URLSearchParams();
+
+  if (params.role) query.set('role', params.role);
+  if (params.startDate) query.set('startDate', params.startDate);
+  if (params.endDate) query.set('endDate', params.endDate);
+  if (params.jobId) query.set('jobId', params.jobId);
+  if (params.materialId) query.set('materialId', params.materialId);
+
+  return query.toString();
+}
+
 export default async function ReportsPage({ searchParams }: { searchParams: ReportsSearchParams }) {
   const role = getRole(searchParams.role);
   const { data } = await getReportsData({
     startDate: searchParams.startDate,
-    endDate: searchParams.endDate
+    endDate: searchParams.endDate,
+    jobId: searchParams.jobId,
+    materialId: searchParams.materialId
+  });
+
+  const activeQuery = buildReportsQuery({
+    role,
+    startDate: data.filters.startDate ?? undefined,
+    endDate: data.filters.endDate ?? undefined,
+    jobId: data.filters.jobId ?? undefined,
+    materialId: data.filters.materialId ?? undefined
   });
 
   return (
@@ -39,6 +63,15 @@ export default async function ReportsPage({ searchParams }: { searchParams: Repo
             <h3>Reports</h3>
             <p className="muted">
               Reporting window: {formatDate(data.filters.startDate)} to {formatDate(data.filters.endDate)}.
+            </p>
+            <p className="muted">
+              Mode: {data.reportMetadata.mode}
+              {data.reportMetadata.selectedJob
+                ? ` · Job ${data.reportMetadata.selectedJob.number} — ${data.reportMetadata.selectedJob.name}`
+                : ''}
+              {data.reportMetadata.selectedMaterial
+                ? ` · Material ${data.reportMetadata.selectedMaterial.sku} — ${data.reportMetadata.selectedMaterial.name}`
+                : ''}
             </p>
           </div>
         </div>
@@ -53,8 +86,33 @@ export default async function ReportsPage({ searchParams }: { searchParams: Repo
             End date
             <input type="date" name="endDate" defaultValue={data.filters.endDate ?? ''} />
           </label>
+          <label>
+            Job
+            <select name="jobId" defaultValue={data.filters.jobId ?? ''}>
+              <option value="">All jobs</option>
+              {data.filterOptions.jobs.map((job) => (
+                <option key={job.id} value={job.id}>
+                  {job.number} — {job.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Material
+            <select name="materialId" defaultValue={data.filters.materialId ?? ''}>
+              <option value="">All materials</option>
+              {data.filterOptions.materials.map((material) => (
+                <option key={material.id} value={material.id}>
+                  {material.sku} — {material.name}
+                </option>
+              ))}
+            </select>
+          </label>
           <div className="reports-filter-actions">
             <button type="submit">Apply filter</button>
+            <a className="ghost-button" href={`/reports/export${activeQuery ? `?${activeQuery}` : ''}`}>
+              Export CSV
+            </a>
             <a className="ghost-button reports-reset-link" href={`/reports?role=${encodeURIComponent(role)}`}>
               Clear
             </a>

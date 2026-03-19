@@ -104,6 +104,17 @@ export type ReportsView = {
   filters: {
     startDate: string | null;
     endDate: string | null;
+    jobId: string | null;
+    materialId: string | null;
+  };
+  filterOptions: {
+    jobs: Array<{ id: string; number: string; name: string }>;
+    materials: Array<{ id: string; sku: string; name: string }>;
+  };
+  reportMetadata: {
+    mode: 'General' | 'Specific Job' | 'Specific Material' | 'Specific Job + Specific Material';
+    selectedJob: { id: string; number: string; name: string } | null;
+    selectedMaterial: { id: string; sku: string; name: string; unit: string } | null;
   };
   inventorySummary: {
     materialCount: number;
@@ -136,6 +147,8 @@ type TransactionLocationInput = {
 type ReportsFilterInput = {
   startDate?: string;
   endDate?: string;
+  jobId?: string;
+  materialId?: string;
 };
 
 const statuses: JobStatus[] = ['OPEN', 'CLOSED'];
@@ -1137,6 +1150,8 @@ export async function getReportsData(filters: ReportsFilterInput = {}): Promise<
 
   const normalizedStartDate = filters.startDate?.trim() || null;
   const normalizedEndDate = filters.endDate?.trim() || null;
+  const normalizedJobId = filters.jobId?.trim() || null;
+  const normalizedMaterialId = filters.materialId?.trim() || null;
   const startDate = parseDateFilterBoundary(normalizedStartDate ?? undefined, 'start');
   const endDateExclusive = parseDateFilterBoundary(normalizedEndDate ?? undefined, 'end');
 
@@ -1150,13 +1165,66 @@ export async function getReportsData(filters: ReportsFilterInput = {}): Promise<
     createdAtFilter.lt = endDateExclusive;
   }
 
-  const transactionWhere = Object.keys(createdAtFilter).length > 0 ? { createdAt: createdAtFilter } : undefined;
+  const transactionWhere: Prisma.InventoryTransactionWhereInput = {};
+
+  if (Object.keys(createdAtFilter).length > 0) {
+    transactionWhere.createdAt = createdAtFilter;
+  }
+
+  if (normalizedMaterialId) {
+    transactionWhere.materialId = normalizedMaterialId;
+  }
+
+  if (normalizedJobId) {
+    transactionWhere.OR = [
+      { locationFromJobId: normalizedJobId },
+      { locationToJobId: normalizedJobId }
+    ];
+  }
+
+  const resolvedTransactionWhere = Object.keys(transactionWhere).length > 0 ? transactionWhere : undefined;
 
   try {
-    const [inventoryBalances, transactions, issueGroups] = await Promise.all([
-      listInventoryBalances(),
+    const [materials, jobs, balances, transactions, issueGroups, activityCounts] = await Promise.all([
+      prisma.material.findMany({
+        select: {
+          id: true,
+          sku: true,
+          name: true,
+          unit: true
+        },
+        orderBy: { name: 'asc' }
+      }),
+      prisma.job.findMany({
+        select: {
+          id: true,
+          number: true,
+          name: true
+        },
+        orderBy: [{ number: 'asc' }, { name: 'asc' }]
+      }),
+      prisma.inventoryBalance.findMany({
+        include: {
+          material: {
+            select: {
+              id: true,
+              sku: true,
+              name: true,
+              unit: true
+            }
+          },
+          job: {
+            select: {
+              id: true,
+              number: true,
+              name: true
+            }
+          }
+        },
+        orderBy: [{ material: { name: 'asc' } }, { locationType: 'asc' }, { job: { number: 'asc' } }]
+      }),
       prisma.inventoryTransaction.findMany({
-        where: transactionWhere,
+        where: resolvedTransactionWhere,
         include: {
           material: true,
           locationFromJob: true,
@@ -1169,7 +1237,7 @@ export async function getReportsData(filters: ReportsFilterInput = {}): Promise<
         by: ['materialId'],
         where: {
           transactionType: 'ISSUE',
-          ...(transactionWhere ?? {})
+          ...(resolvedTransactionWhere ?? {})
         },
         _sum: { quantity: true },
         _count: { _all: true },
@@ -1179,34 +1247,72 @@ export async function getReportsData(filters: ReportsFilterInput = {}): Promise<
           }
         },
         take: 5
+      }),
+      prisma.inventoryTransaction.groupBy({
+        by: ['transactionType'],
+        where: resolvedTransactionWhere,
+        _count: { _all: true },
+        _sum: { quantity: true }
       })
     ]);
 
+    const selectedJob = jobs.find((job) => job.id === normalizedJobId) ?? null;
+    const selectedMaterial = materials.find((material) => material.id === normalizedMaterialId) ?? null;
+
+    const reportMode: ReportsView['reportMetadata']['mode'] =
+      selectedJob && selectedMaterial
+        ? 'Specific Job + Specific Material'
+        : selectedJob
+          ? 'Specific Job'
+          : selectedMaterial
+            ? 'Specific Material'
+            : 'General';
+
+    const visibleBalances = balances.filter((balance) => {
+      if (selectedMaterial && balance.materialId !== selectedMaterial.id) {
+        return false;
+      }
+
+      if (selectedJob && balance.locationType === 'JOB' && balance.jobId !== selectedJob.id) {
+        return false;
+      }
+
+      if (selectedJob && balance.locationType === 'JOB' && balance.jobId === selectedJob.id) {
+        return true;
+      }
+
+      return balance.locationType === 'SHOP' || !selectedJob;
+    });
+
+    const inventorySummaryByMaterial = new Map<string, ReportsInventoryRow>();
+
+    for (const balance of visibleBalances) {
+      const existing = inventorySummaryByMaterial.get(balance.materialId) ?? {
+        materialId: balance.materialId,
+        materialSku: balance.material.sku,
+        materialName: balance.material.name,
+        unit: balance.material.unit,
+        shopQuantity: 0,
+        totalJobQuantity: 0,
+        totalQuantity: 0
+      };
+
+      if (balance.locationType === 'SHOP') {
+        existing.shopQuantity += balance.quantity;
+      } else {
+        existing.totalJobQuantity += balance.quantity;
+      }
+
+      existing.totalQuantity += balance.quantity;
+      inventorySummaryByMaterial.set(balance.materialId, existing);
+    }
+
+    const inventoryRows = Array.from(inventorySummaryByMaterial.values()).sort((a, b) =>
+      a.materialName.localeCompare(b.materialName)
+    );
+
     const issueMaterialIds = issueGroups.map((entry) => entry.materialId);
-    const issueMaterials =
-      issueMaterialIds.length === 0
-        ? []
-        : await prisma.material.findMany({
-            where: { id: { in: issueMaterialIds } },
-            select: {
-              id: true,
-              sku: true,
-              name: true,
-              unit: true
-            }
-          });
-
-    const issueMaterialMap = new Map(issueMaterials.map((material) => [material.id, material]));
-
-    const inventoryRows: ReportsInventoryRow[] = inventoryBalances.data.map((row) => ({
-      materialId: row.materialId,
-      materialSku: row.materialSku,
-      materialName: row.materialName,
-      unit: row.unit,
-      shopQuantity: row.shopQuantity,
-      totalJobQuantity: row.jobQuantities.reduce((sum, entry) => sum + entry.quantity, 0),
-      totalQuantity: row.totalQuantity
-    }));
+    const issueMaterialMap = new Map(materials.filter((material) => issueMaterialIds.includes(material.id)).map((material) => [material.id, material]));
 
     const topMaterials: TopUsedMaterialRow[] = issueGroups
       .map((entry) => {
@@ -1246,20 +1352,28 @@ export async function getReportsData(filters: ReportsFilterInput = {}): Promise<
       hasPhoto: Boolean(entry.photoUrl)
     }));
 
-    const activityCounts = await prisma.inventoryTransaction.groupBy({
-      by: ['transactionType'],
-      where: transactionWhere,
-      _count: { _all: true },
-      _sum: { quantity: true }
-    });
-
     const summaryByType = new Map(activityCounts.map((entry) => [entry.transactionType, entry]));
 
     return {
       data: {
         filters: {
           startDate: normalizedStartDate,
-          endDate: normalizedEndDate
+          endDate: normalizedEndDate,
+          jobId: selectedJob?.id ?? null,
+          materialId: selectedMaterial?.id ?? null
+        },
+        filterOptions: {
+          jobs,
+          materials: materials.map((material) => ({
+            id: material.id,
+            sku: material.sku,
+            name: material.name
+          }))
+        },
+        reportMetadata: {
+          mode: reportMode,
+          selectedJob,
+          selectedMaterial
         },
         inventorySummary: {
           materialCount: inventoryRows.length,
@@ -1285,7 +1399,24 @@ export async function getReportsData(filters: ReportsFilterInput = {}): Promise<
       data: {
         filters: {
           startDate: normalizedStartDate,
-          endDate: normalizedEndDate
+          endDate: normalizedEndDate,
+          jobId: normalizedJobId,
+          materialId: normalizedMaterialId
+        },
+        filterOptions: {
+          jobs: [],
+          materials: []
+        },
+        reportMetadata: {
+          mode: normalizedJobId && normalizedMaterialId
+            ? 'Specific Job + Specific Material'
+            : normalizedJobId
+              ? 'Specific Job'
+              : normalizedMaterialId
+                ? 'Specific Material'
+                : 'General',
+          selectedJob: null,
+          selectedMaterial: null
         },
         inventorySummary: {
           materialCount: 0,
