@@ -2,6 +2,8 @@ import { AppShell } from '@/app/components/app-shell';
 import { getDashboardData } from '@/app/actions';
 import { getRole } from '@/lib/role';
 
+export const dynamic = 'force-dynamic';
+
 export default async function DashboardPage({ searchParams }: { searchParams: { role?: string } }) {
   const role = getRole(searchParams.role);
   const data = await getDashboardData();
