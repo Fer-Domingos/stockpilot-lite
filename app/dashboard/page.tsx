@@ -1,3 +1,5 @@
+import Link from 'next/link';
+
 import { AppShell } from '@/app/components/app-shell';
 import { AlertsCenter } from '@/app/components/alerts-center';
 import { getDashboardData } from '@/app/actions';
@@ -7,6 +9,9 @@ import { getRole } from '@/lib/role';
 export default async function DashboardPage({ searchParams }: { searchParams: { role?: string } }) {
   const role = await getRole(searchParams.role);
   const data = await getDashboardData(role);
+  const lowStockHref = searchParams.role
+    ? `/inventory?${new URLSearchParams({ lowStock: 'true', role: searchParams.role }).toString()}`
+    : '/inventory?lowStock=true';
 
   return (
     <AppShell role={role}>
@@ -15,10 +20,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: { 
           <p className="muted">SKUs Tracked</p>
           <h3>{data.totalSku}</h3>
         </article>
-        <article className="card kpi-card">
+        <Link href={lowStockHref} className="card kpi-card kpi-card-link">
           <p className="muted">Low Stock Alerts</p>
           <h3>{data.lowStock}</h3>
-        </article>
+          <p className="muted kpi-card-link-copy">View items below minimum stock</p>
+        </Link>
         <article className="card kpi-card">
           <p className="muted">Open Jobs</p>
           <h3>{data.openJobs}</h3>
