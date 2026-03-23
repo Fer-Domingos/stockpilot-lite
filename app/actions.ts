@@ -1363,7 +1363,7 @@ export async function listReceivingRecords() {
 export async function transferMaterial(formData: FormData) {
   try {
     await requireRole('ADMIN');
-  } catch (error) {
+  } catch {
     redirect('/transfer-materials?error=save-failed');
   }
 
@@ -1441,7 +1441,7 @@ export async function transferMaterial(formData: FormData) {
 export async function issueMaterial(formData: FormData) {
   try {
     await requireRole('ADMIN');
-  } catch (error) {
+  } catch {
     redirect('/issue-materials?error=save-failed');
   }
 
