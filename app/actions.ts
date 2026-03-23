@@ -1,14 +1,22 @@
-'use server';
+"use server";
 
-import { revalidatePath, unstable_noStore as noStore } from 'next/cache';
-import { cookies } from 'next/headers';
-import { redirect } from 'next/navigation';
+import { revalidatePath, unstable_noStore as noStore } from "next/cache";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 
-import { InventoryLocationType, Prisma, PurchaseOrderAlertStatus } from '@prisma/client';
+import {
+  InventoryLocationType,
+  Prisma,
+  PurchaseOrderAlertStatus,
+} from "@prisma/client";
 
-import { prisma } from '@/lib/prisma';
-import { authConfig, decodeSession } from '@/lib/session';
-import { AppRole } from '@/lib/demo-data';
+import { prisma } from "@/lib/prisma";
+import {
+  listInventoryTransactions as listInventoryTransactionsQuery,
+  type InventoryTransactionView,
+} from "@/lib/inventory-transactions";
+import { authConfig, decodeSession } from "@/lib/session";
+import { AppRole } from "@/lib/demo-data";
 
 export type MaterialRecord = {
   id: string;
@@ -20,7 +28,7 @@ export type MaterialRecord = {
   notes: string;
 };
 
-export type JobStatus = 'OPEN' | 'CLOSED';
+export type JobStatus = "OPEN" | "CLOSED";
 
 export type JobRecord = {
   id: string;
@@ -29,7 +37,7 @@ export type JobRecord = {
   status: JobStatus;
 };
 
-export type AlertStatus = 'OPEN' | 'TRIGGERED' | 'SEEN' | 'RESOLVED';
+export type AlertStatus = "OPEN" | "TRIGGERED" | "SEEN" | "RESOLVED";
 
 export type ExpectedPurchaseOrderRecord = {
   id: string;
@@ -77,21 +85,7 @@ export type PurchaseOrderAlertRecord = {
   triggerCount: number;
 };
 
-export type InventoryTransactionRecord = {
-  id: string;
-  createdAt: string;
-  type: 'RECEIVE' | 'TRANSFER' | 'ISSUE' | 'ADJUSTMENT';
-  materialSku: string;
-  materialName: string;
-  quantity: number;
-  unit: string;
-  locationFrom: string;
-  locationTo: string;
-  invoiceNumber: string;
-  vendorName: string;
-  notes: string;
-  hasPhoto: boolean;
-};
+export type InventoryTransactionRecord = InventoryTransactionView;
 
 export type InventoryBalanceView = {
   materialId: string;
@@ -166,9 +160,18 @@ export type ReportsView = {
     materials: Array<{ id: string; sku: string; name: string }>;
   };
   reportMetadata: {
-    mode: 'General' | 'Specific Job' | 'Specific Material' | 'Specific Job + Specific Material';
+    mode:
+      | "General"
+      | "Specific Job"
+      | "Specific Material"
+      | "Specific Job + Specific Material";
     selectedJob: { id: string; number: string; name: string } | null;
-    selectedMaterial: { id: string; sku: string; name: string; unit: string } | null;
+    selectedMaterial: {
+      id: string;
+      sku: string;
+      name: string;
+      unit: string;
+    } | null;
   };
   inventorySummary: {
     materialCount: number;
@@ -185,8 +188,8 @@ type ActionResult<T = undefined> = {
   data?: T;
 };
 
-type MaterialPayload = Omit<MaterialRecord, 'id' | 'quantity'>;
-type JobPayload = Omit<JobRecord, 'id'>;
+type MaterialPayload = Omit<MaterialRecord, "id" | "quantity">;
+type JobPayload = Omit<JobRecord, "id">;
 
 type ParsedLocation = {
   locationType: InventoryLocationType;
@@ -205,10 +208,8 @@ type ReportsFilterInput = {
   materialId?: string;
 };
 
-const statuses: JobStatus[] = ['OPEN', 'CLOSED'];
-const materialUnits = ['UNIT', 'SHEETS'] as const;
-
-
+const statuses: JobStatus[] = ["OPEN", "CLOSED"];
+const materialUnits = ["UNIT", "SHEETS"] as const;
 
 async function getCurrentSession() {
   const sessionToken = cookies().get(authConfig.sessionCookieName)?.value;
@@ -217,14 +218,14 @@ async function getCurrentSession() {
 
 async function getCurrentRole(): Promise<AppRole> {
   const session = await getCurrentSession();
-  return session?.role === 'PM' ? 'PM' : 'ADMIN';
+  return session?.role === "PM" ? "PM" : "ADMIN";
 }
 
 async function requireRole(...allowedRoles: AppRole[]) {
   const role = await getCurrentRole();
 
   if (!allowedRoles.includes(role)) {
-    throw new Error('You are not authorized to perform this action.');
+    throw new Error("You are not authorized to perform this action.");
   }
 
   return role;
@@ -247,19 +248,19 @@ async function getCurrentSessionUser() {
 
   return prisma.adminUser.findUnique({
     where: { email: session.email.toLowerCase().trim() },
-    select: { id: true, email: true }
+    select: { id: true, email: true },
   });
 }
 
 async function buildAlertAccessFilter(role: AppRole) {
-  if (role === 'ADMIN') {
+  if (role === "ADMIN") {
     return {};
   }
 
   const currentUser = await getCurrentSessionUser();
 
   if (!currentUser) {
-    return { ownerId: '__missing_user__' };
+    return { ownerId: "__missing_user__" };
   }
 
   return { ownerId: currentUser.id };
@@ -268,7 +269,7 @@ async function buildAlertAccessFilter(role: AppRole) {
 async function updateTrackedPurchaseOrderStatus(
   expectedPoId: string,
   status: AlertStatus,
-  role: AppRole = 'ADMIN'
+  role: AppRole = "ADMIN",
 ) {
   const currentUser = await getCurrentSessionUser();
   const trackedPo = await prisma.expectedPurchaseOrder.findUnique({
@@ -276,87 +277,94 @@ async function updateTrackedPurchaseOrderStatus(
     select: {
       id: true,
       ownerId: true,
-      seenAt: true
-    }
+      seenAt: true,
+    },
   });
 
   if (!trackedPo) {
-    redirect('/alerts?error=invalid-alert');
+    redirect("/alerts?error=invalid-alert");
   }
 
-  if (role === 'PM') {
-    if (!currentUser || !trackedPo.ownerId || trackedPo.ownerId !== currentUser.id) {
-      redirect('/alerts?error=invalid-alert');
+  if (role === "PM") {
+    if (
+      !currentUser ||
+      !trackedPo.ownerId ||
+      trackedPo.ownerId !== currentUser.id
+    ) {
+      redirect("/alerts?error=invalid-alert");
     }
   }
 
   const now = new Date();
   const data: Prisma.ExpectedPurchaseOrderUpdateInput = { status };
 
-  if (status === 'SEEN') {
+  if (status === "SEEN") {
     data.seenAt = trackedPo.seenAt ?? now;
     data.resolvedAt = null;
   }
 
-  if (status === 'RESOLVED') {
+  if (status === "RESOLVED") {
     data.seenAt = trackedPo.seenAt ?? now;
     data.resolvedAt = now;
   }
 
-  if (status === 'TRIGGERED') {
+  if (status === "TRIGGERED") {
     data.resolvedAt = null;
   }
 
   await prisma.$transaction(async (tx) => {
     await tx.expectedPurchaseOrder.update({
       where: { id: expectedPoId },
-      data
+      data,
     });
 
     await tx.purchaseOrderAlert.updateMany({
       where: {
         expectedPoId,
         status: {
-          not: 'RESOLVED'
-        }
+          not: "RESOLVED",
+        },
       },
       data: {
         status,
-        seenAt: status === 'SEEN' || status === 'RESOLVED' ? trackedPo.seenAt ?? now : null,
-        resolvedAt: status === 'RESOLVED' ? now : null
-      }
+        seenAt:
+          status === "SEEN" || status === "RESOLVED"
+            ? (trackedPo.seenAt ?? now)
+            : null,
+        resolvedAt: status === "RESOLVED" ? now : null,
+      },
     });
   });
 
-  revalidatePath('/alerts');
-  revalidatePath('/dashboard');
-  revalidatePath('/po-alerts');
-  revalidatePath('/receive-materials');
+  revalidatePath("/alerts");
+  revalidatePath("/dashboard");
+  revalidatePath("/po-alerts");
+  revalidatePath("/receive-materials");
 }
 
 function formatExpectedPoMutationError(error: unknown): string {
   if (error instanceof Prisma.PrismaClientKnownRequestError) {
-    if (error.code === 'P2002') {
-      return 'That PO number is already being tracked.';
+    if (error.code === "P2002") {
+      return "That PO number is already being tracked.";
     }
 
-    if (error.code === 'P2021' || error.code === 'P2022') {
-      return 'PO tracking tables are missing. Run the latest Prisma migrations and try again.';
+    if (error.code === "P2021" || error.code === "P2022") {
+      return "PO tracking tables are missing. Run the latest Prisma migrations and try again.";
     }
   }
 
-  return 'Unable to save tracked PO right now.';
+  return "Unable to save tracked PO right now.";
 }
 
 function normalizeMaterialUnit(unit: string): string {
   const normalized = unit.trim().toUpperCase();
 
-  if (normalized === 'SHEET' || normalized === 'SHEETS') {
-    return 'SHEETS';
+  if (normalized === "SHEET" || normalized === "SHEETS") {
+    return "SHEETS";
   }
 
-  if (normalized === 'UNIT' || normalized === 'UNITS') {
-    return 'UNIT';
+  if (normalized === "UNIT" || normalized === "UNITS") {
+    return "UNIT";
   }
 
   return normalized;
@@ -368,29 +376,35 @@ function normalizeMaterialPayload(payload: MaterialPayload): MaterialPayload {
     sku: payload.sku.trim(),
     unit: normalizeMaterialUnit(payload.unit),
     minStock: Math.max(0, Math.floor(payload.minStock)),
-    notes: payload.notes.trim()
+    notes: payload.notes.trim(),
   };
 }
 
-function validateMaterialPayload(payload: MaterialPayload): ActionResult<MaterialRecord> {
+function validateMaterialPayload(
+  payload: MaterialPayload,
+): ActionResult<MaterialRecord> {
   if (!payload.name.trim()) {
-    return { ok: false, error: 'Material name is required.' };
+    return { ok: false, error: "Material name is required." };
   }
 
   if (!payload.sku.trim()) {
-    return { ok: false, error: 'SKU is required.' };
+    return { ok: false, error: "SKU is required." };
   }
 
   if (!payload.unit.trim()) {
-    return { ok: false, error: 'Unit is required.' };
+    return { ok: false, error: "Unit is required." };
   }
 
-  if (!materialUnits.includes(normalizeMaterialUnit(payload.unit) as (typeof materialUnits)[number])) {
-    return { ok: false, error: 'Unit must be either UNIT or SHEETS.' };
+  if (
+    !materialUnits.includes(
+      normalizeMaterialUnit(payload.unit) as (typeof materialUnits)[number],
+    )
+  ) {
+    return { ok: false, error: "Unit must be either UNIT or SHEETS." };
   }
 
   if (!Number.isFinite(payload.minStock) || payload.minStock < 0) {
-    return { ok: false, error: 'Minimum stock must be a non-negative number.' };
+    return { ok: false, error: "Minimum stock must be a non-negative number." };
   }
 
   return { ok: true };
@@ -398,16 +412,16 @@ function validateMaterialPayload(payload: MaterialPayload): ActionResult<Materia
 
 function formatMaterialMutationError(error: unknown): string {
   if (error instanceof Prisma.PrismaClientKnownRequestError) {
-    if (error.code === 'P2002') {
-      return 'A material with this SKU already exists.';
+    if (error.code === "P2002") {
+      return "A material with this SKU already exists.";
     }
 
-    if (error.code === 'P2022') {
-      return 'Materials table is out of date. Run the latest Prisma migrations and try again.';
+    if (error.code === "P2022") {
+      return "Materials table is out of date. Run the latest Prisma migrations and try again.";
     }
   }
 
-  return 'Unable to save material right now.';
+  return "Unable to save material right now.";
 }
 
 function isBalanceTableUnavailable(error: unknown): boolean {
@@ -415,11 +429,11 @@ function isBalanceTableUnavailable(error: unknown): boolean {
     return false;
   }
 
-  if (error.code === 'P2021') {
+  if (error.code === "P2021") {
     return true;
   }
 
-  if (error.code === 'P2022') {
+  if (error.code === "P2022") {
     return true;
   }
 
@@ -427,30 +441,30 @@ function isBalanceTableUnavailable(error: unknown): boolean {
 }
 
 function normalizeJobPayload(payload: JobPayload): JobPayload {
-  const status = statuses.includes(payload.status) ? payload.status : 'OPEN';
+  const status = statuses.includes(payload.status) ? payload.status : "OPEN";
 
   return {
     number: payload.number.trim(),
     name: payload.name.trim(),
-    status
+    status,
   };
 }
 
 function parseLocation(locationValue: string): ParsedLocation | null {
-  if (locationValue === 'shop') {
-    return { locationType: 'SHOP', jobId: null };
+  if (locationValue === "shop") {
+    return { locationType: "SHOP", jobId: null };
   }
 
-  if (locationValue.startsWith('loc-')) {
-    return { locationType: 'JOB', jobId: locationValue.replace('loc-', '') };
+  if (locationValue.startsWith("loc-")) {
+    return { locationType: "JOB", jobId: locationValue.replace("loc-", "") };
   }
 
   return null;
 }
 
 function normalizeTransactionLocation(
-  fieldName: 'locationFromType' | 'locationToType',
-  input: TransactionLocationInput
+  fieldName: "locationFromType" | "locationToType",
+  input: TransactionLocationInput,
 ): TransactionLocationInput {
   const { locationType, jobId } = input;
 
@@ -458,41 +472,25 @@ function normalizeTransactionLocation(
     return { locationType: null, jobId: null };
   }
 
-  if (locationType === 'SHOP') {
-    return { locationType: 'SHOP', jobId: null };
+  if (locationType === "SHOP") {
+    return { locationType: "SHOP", jobId: null };
   }
 
-  if (locationType === 'JOB') {
+  if (locationType === "JOB") {
     if (!jobId) {
       throw new Error(`${fieldName} cannot be JOB without a job id.`);
     }
 
-    return { locationType: 'JOB', jobId };
+    return { locationType: "JOB", jobId };
   }
 
   throw new Error(`${fieldName} must be SHOP, JOB, or null.`);
 }
 
-function formatLocationLabel(
-  locationType: InventoryLocationType | null,
-  job: { number: string; name: string } | null | undefined
-): string {
-  if (!locationType) {
-    return 'N/A';
-  }
-
-  if (locationType === 'SHOP') {
-    return 'Shop';
-  }
-
-  if (job) {
-    return `${job.number} — ${job.name}`;
-  }
-
-  return 'Job';
-}
-
-function parseDateFilterBoundary(value: string | undefined, boundary: 'start' | 'end'): Date | null {
+function parseDateFilterBoundary(
+  value: string | undefined,
+  boundary: "start" | "end",
+): Date | null {
   if (!value) {
     return null;
   }
@@ -509,7 +507,7 @@ function parseDateFilterBoundary(value: string | undefined, boundary: 'start' | 
     return null;
   }
 
-  if (boundary === 'end') {
+  if (boundary === "end") {
     parsed.setUTCDate(parsed.getUTCDate() + 1);
   }
 
@@ -521,7 +519,7 @@ async function adjustInventoryBalance(
   materialId: string,
   locationType: InventoryLocationType,
   jobId: string | null,
-  delta: number
+  delta: number,
 ) {
   if (delta === 0) {
     return;
@@ -531,16 +529,16 @@ async function adjustInventoryBalance(
     where: {
       materialId,
       locationType,
-      jobId: jobId ?? null
-    }
+      jobId: jobId ?? null,
+    },
   });
 
   if (!existing && delta < 0) {
-    throw new Error('Insufficient stock for this location.');
+    throw new Error("Insufficient stock for this location.");
   }
 
   if (existing && existing.quantity + delta < 0) {
-    throw new Error('Insufficient stock for this location.');
+    throw new Error("Insufficient stock for this location.");
   }
 
   if (!existing) {
@@ -549,8 +547,8 @@ async function adjustInventoryBalance(
         materialId,
         locationType,
         jobId,
-        quantity: delta
-      }
+        quantity: delta,
+      },
     });
     return;
   }
@@ -558,16 +556,16 @@ async function adjustInventoryBalance(
   await tx.inventoryBalance.update({
     where: { id: existing.id },
     data: {
-      quantity: { increment: delta }
-    }
+      quantity: { increment: delta },
+    },
   });
 }
 
 async function syncMaterialQuantitiesFromBalances() {
   const materials = await prisma.material.findMany({
     select: {
-      id: true
-    }
+      id: true,
+    },
   });
 
   if (materials.length === 0) {
@@ -575,21 +573,23 @@ async function syncMaterialQuantitiesFromBalances() {
   }
 
   const balanceSums = await prisma.inventoryBalance.groupBy({
-    by: ['materialId'],
-    _sum: { quantity: true }
+    by: ["materialId"],
+    _sum: { quantity: true },
   });
 
-  const quantityByMaterialId = new Map(balanceSums.map((entry) => [entry.materialId, entry._sum.quantity ?? 0]));
+  const quantityByMaterialId = new Map(
+    balanceSums.map((entry) => [entry.materialId, entry._sum.quantity ?? 0]),
+  );
 
   await prisma.$transaction(
     materials.map((material) =>
       prisma.material.update({
         where: { id: material.id },
         data: {
-          quantity: quantityByMaterialId.get(material.id) ?? 0
-        }
-      })
-    )
+          quantity: quantityByMaterialId.get(material.id) ?? 0,
+        },
+      }),
+    ),
   );
 }
 
@@ -605,9 +605,9 @@ export async function listMaterials(): Promise<{ data: MaterialRecord[] }> {
         unit: true,
         quantity: true,
         minStock: true,
-        notes: true
+        notes: true,
       },
-      orderBy: { createdAt: 'asc' }
+      orderBy: { createdAt: "asc" },
     });
 
     if (materials.length === 0) {
@@ -618,20 +618,27 @@ export async function listMaterials(): Promise<{ data: MaterialRecord[] }> {
 
     try {
       const balanceSums = await prisma.inventoryBalance.groupBy({
-        by: ['materialId'],
+        by: ["materialId"],
         _sum: { quantity: true },
         where: {
-          materialId: { in: materials.map((material) => material.id) }
-        }
+          materialId: { in: materials.map((material) => material.id) },
+        },
       });
 
-      quantityByMaterialId = new Map(balanceSums.map((entry) => [entry.materialId, entry._sum.quantity ?? 0]));
+      quantityByMaterialId = new Map(
+        balanceSums.map((entry) => [
+          entry.materialId,
+          entry._sum.quantity ?? 0,
+        ]),
+      );
     } catch (error) {
       if (!isBalanceTableUnavailable(error)) {
         throw error;
       }
 
-      console.warn('InventoryBalance table unavailable, falling back to Material.quantity.');
+      console.warn(
+        "InventoryBalance table unavailable, falling back to Material.quantity.",
+      );
     }
 
     return {
@@ -642,21 +649,26 @@ export async function listMaterials(): Promise<{ data: MaterialRecord[] }> {
         unit: material.unit,
         quantity: quantityByMaterialId.get(material.id) ?? material.quantity,
         minStock: material.minStock,
-        notes: material.notes
-      }))
+        notes: material.notes,
+      })),
     };
   } catch (error) {
-    console.error('Failed to load materials from database:', error);
+    console.error("Failed to load materials from database:", error);
 
     return { data: [] };
   }
 }
 
-export async function createMaterial(payload: MaterialPayload): Promise<ActionResult<MaterialRecord>> {
+export async function createMaterial(
+  payload: MaterialPayload,
+): Promise<ActionResult<MaterialRecord>> {
   try {
-    await requireRole('ADMIN');
+    await requireRole("ADMIN");
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : 'Unauthorized.' };
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Unauthorized.",
+    };
   }
 
   const validation = validateMaterialPayload(payload);
@@ -674,10 +686,10 @@ export async function createMaterial(payload: MaterialPayload): Promise<ActionRe
         unit: true,
         quantity: true,
         minStock: true,
-        notes: true
-      }
+        notes: true,
+      },
     });
-    revalidatePath('/materials');
+    revalidatePath("/materials");
 
     return {
       ok: true,
@@ -688,20 +700,26 @@ export async function createMaterial(payload: MaterialPayload): Promise<ActionRe
         unit: created.unit,
         quantity: created.quantity,
         minStock: created.minStock,
-        notes: created.notes
-      }
+        notes: created.notes,
+      },
     };
   } catch (error) {
-    console.error('Failed to create material:', error);
+    console.error("Failed to create material:", error);
     return { ok: false, error: formatMaterialMutationError(error) };
   }
 }
 
-export async function updateMaterial(id: string, payload: MaterialPayload): Promise<ActionResult<MaterialRecord>> {
+export async function updateMaterial(
+  id: string,
+  payload: MaterialPayload,
+): Promise<ActionResult<MaterialRecord>> {
   try {
-    await requireRole('ADMIN');
+    await requireRole("ADMIN");
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : 'Unauthorized.' };
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Unauthorized.",
+    };
   }
 
   const validation = validateMaterialPayload(payload);
@@ -720,8 +738,8 @@ export async function updateMaterial(id: string, payload: MaterialPayload): Prom
         unit: true,
         quantity: true,
         minStock: true,
-        notes: true
-      }
+        notes: true,
+      },
     });
 
     let quantity = updated.quantity;
@@ -729,7 +747,7 @@ export async function updateMaterial(id: string, payload: MaterialPayload): Prom
     try {
       const balance = await prisma.inventoryBalance.aggregate({
         where: { materialId: id },
-        _sum: { quantity: true }
+        _sum: { quantity: true },
       });
 
       quantity = balance._sum.quantity ?? 0;
@@ -738,10 +756,12 @@ export async function updateMaterial(id: string, payload: MaterialPayload): Prom
         throw error;
       }
 
-      console.warn('InventoryBalance table unavailable, falling back to Material.quantity.');
+      console.warn(
+        "InventoryBalance table unavailable, falling back to Material.quantity.",
+      );
     }
 
-    revalidatePath('/materials');
+    revalidatePath("/materials");
 
     return {
       ok: true,
@@ -752,31 +772,31 @@ export async function updateMaterial(id: string, payload: MaterialPayload): Prom
         unit: updated.unit,
         quantity,
         minStock: updated.minStock,
-        notes: updated.notes
-      }
+        notes: updated.notes,
+      },
     };
   } catch (error) {
-    console.error('Failed to update material:', error);
+    console.error("Failed to update material:", error);
     return { ok: false, error: formatMaterialMutationError(error) };
   }
 }
 
 export async function deleteMaterial(id: string): Promise<ActionResult> {
   try {
-    await requireRole('ADMIN');
+    await requireRole("ADMIN");
     await prisma.material.delete({ where: { id } });
-    revalidatePath('/materials');
+    revalidatePath("/materials");
     return { ok: true };
   } catch (error) {
-    console.error('Failed to delete material:', error);
-    return { ok: false, error: 'Unable to delete material right now.' };
+    console.error("Failed to delete material:", error);
+    return { ok: false, error: "Unable to delete material right now." };
   }
 }
 
 export async function listJobs(): Promise<{ data: JobRecord[] }> {
   try {
     const jobs = await prisma.job.findMany({
-      orderBy: { createdAt: 'asc' }
+      orderBy: { createdAt: "asc" },
     });
 
     return {
@@ -784,23 +804,27 @@ export async function listJobs(): Promise<{ data: JobRecord[] }> {
         id: job.id,
         number: job.number,
         name: job.name,
-        status: statuses.includes(job.status as JobStatus) ? (job.status as JobStatus) : 'OPEN'
-      }))
+        status: statuses.includes(job.status as JobStatus)
+          ? (job.status as JobStatus)
+          : "OPEN",
+      })),
     };
   } catch (error) {
-    console.error('Failed to load jobs from database:', error);
+    console.error("Failed to load jobs from database:", error);
 
     return { data: [] };
   }
 }
 
-export async function createJob(payload: JobPayload): Promise<ActionResult<JobRecord>> {
+export async function createJob(
+  payload: JobPayload,
+): Promise<ActionResult<JobRecord>> {
   try {
-    await requireRole('ADMIN');
+    await requireRole("ADMIN");
     const created = await prisma.job.create({
-      data: normalizeJobPayload(payload)
+      data: normalizeJobPayload(payload),
     });
-    revalidatePath('/jobs');
+    revalidatePath("/jobs");
 
     return {
       ok: true,
@@ -808,23 +832,28 @@ export async function createJob(payload: JobPayload): Promise<ActionResult<JobRe
         id: created.id,
         number: created.number,
         name: created.name,
-        status: statuses.includes(created.status as JobStatus) ? (created.status as JobStatus) : 'OPEN'
-      }
+        status: statuses.includes(created.status as JobStatus)
+          ? (created.status as JobStatus)
+          : "OPEN",
+      },
     };
   } catch (error) {
-    console.error('Failed to create job:', error);
-    return { ok: false, error: 'Unable to save job right now.' };
+    console.error("Failed to create job:", error);
+    return { ok: false, error: "Unable to save job right now." };
   }
 }
 
-export async function updateJob(id: string, payload: JobPayload): Promise<ActionResult<JobRecord>> {
+export async function updateJob(
+  id: string,
+  payload: JobPayload,
+): Promise<ActionResult<JobRecord>> {
   try {
-    await requireRole('ADMIN');
+    await requireRole("ADMIN");
     const updated = await prisma.job.update({
       where: { id },
-      data: normalizeJobPayload(payload)
+      data: normalizeJobPayload(payload),
     });
-    revalidatePath('/jobs');
+    revalidatePath("/jobs");
 
     return {
       ok: true,
@@ -832,29 +861,32 @@ export async function updateJob(id: string, payload: JobPayload): Promise<Action
         id: updated.id,
         number: updated.number,
         name: updated.name,
-        status: statuses.includes(updated.status as JobStatus) ? (updated.status as JobStatus) : 'OPEN'
-      }
+        status: statuses.includes(updated.status as JobStatus)
+          ? (updated.status as JobStatus)
+          : "OPEN",
+      },
     };
   } catch (error) {
-    console.error('Failed to update job:', error);
-    return { ok: false, error: 'Unable to update job right now.' };
+    console.error("Failed to update job:", error);
+    return { ok: false, error: "Unable to update job right now." };
   }
 }
 
 export async function deleteJob(id: string): Promise<ActionResult> {
   try {
-    await requireRole('ADMIN');
+    await requireRole("ADMIN");
     await prisma.job.delete({ where: { id } });
-    revalidatePath('/jobs');
+    revalidatePath("/jobs");
     return { ok: true };
   } catch (error) {
-    console.error('Failed to delete job:', error);
-    return { ok: false, error: 'Unable to delete job right now.' };
+    console.error("Failed to delete job:", error);
+    return { ok: false, error: "Unable to delete job right now." };
   }
 }
 
-
-export async function getActiveAlertCount(role: AppRole = 'ADMIN'): Promise<number> {
+export async function getActiveAlertCount(
+  role: AppRole = "ADMIN",
+): Promise<number> {
   noStore();
 
   try {
@@ -864,17 +896,19 @@ export async function getActiveAlertCount(role: AppRole = 'ADMIN'): Promise<numb
       where: {
         ...accessFilter,
         status: {
-          in: ['OPEN', 'TRIGGERED']
-        }
-      }
+          in: ["OPEN", "TRIGGERED"],
+        },
+      },
     });
   } catch (error) {
-    console.error('Failed to load active alert count:', error);
+    console.error("Failed to load active alert count:", error);
     return 0;
   }
 }
 
-export async function listExpectedPurchaseOrders(role: AppRole = 'ADMIN'): Promise<{ data: ExpectedPurchaseOrderRecord[] }> {
+export async function listExpectedPurchaseOrders(
+  role: AppRole = "ADMIN",
+): Promise<{ data: ExpectedPurchaseOrderRecord[] }> {
   noStore();
 
   try {
@@ -885,14 +919,14 @@ export async function listExpectedPurchaseOrders(role: AppRole = 'ADMIN'): Promi
       include: {
         owner: {
           select: {
-            email: true
-          }
+            email: true,
+          },
         },
         job: {
           select: {
             number: true,
-            name: true
-          }
+            name: true,
+          },
         },
         alerts: {
           include: {
@@ -901,29 +935,29 @@ export async function listExpectedPurchaseOrders(role: AppRole = 'ADMIN'): Promi
                 material: {
                   select: {
                     name: true,
-                    sku: true
-                  }
-                }
-              }
-            }
+                    sku: true,
+                  },
+                },
+              },
+            },
           },
-          orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
-          take: 1
-        }
+          orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+          take: 1,
+        },
       },
-      orderBy: [{ createdAt: 'desc' }, { poNumber: 'asc' }]
+      orderBy: [{ createdAt: "desc" }, { poNumber: "asc" }],
     });
 
     return {
       data: rows.map((row) => ({
         id: row.id,
         ownerId: row.ownerId,
-        ownerEmail: row.owner?.email ?? 'Unassigned',
+        ownerEmail: row.owner?.email ?? "Unassigned",
         poNumber: row.poNumber,
         normalizedPoNumber: row.normalizedPoNumber,
         jobId: row.jobId,
-        jobLabel: row.job ? `${row.job.number} — ${row.job.name}` : '—',
-        note: row.note ?? '',
+        jobLabel: row.job ? `${row.job.number} — ${row.job.name}` : "—",
+        note: row.note ?? "",
         status: serializeAlertStatus(row.status),
         createdAt: row.createdAt.toISOString(),
         updatedAt: row.updatedAt.toISOString(),
@@ -932,36 +966,42 @@ export async function listExpectedPurchaseOrders(role: AppRole = 'ADMIN'): Promi
         resolvedAt: row.resolvedAt?.toISOString() ?? null,
         triggerCount: row.triggerCount,
         latestAlertId: row.alerts[0]?.id ?? null,
-        latestAlertMessage: row.alerts[0]?.message ?? '',
+        latestAlertMessage: row.alerts[0]?.message ?? "",
         latestAlertReceiptId: row.alerts[0]?.receivingRecordId ?? null,
-        latestAlertInvoiceNumber: row.alerts[0]?.receivingRecord.invoiceNumber ?? '—',
-        latestAlertMaterialName: row.alerts[0]?.receivingRecord.material.name ?? '—',
-        latestAlertMaterialSku: row.alerts[0]?.receivingRecord.material.sku ?? '—'
-      }))
+        latestAlertInvoiceNumber:
+          row.alerts[0]?.receivingRecord.invoiceNumber ?? "—",
+        latestAlertMaterialName:
+          row.alerts[0]?.receivingRecord.material.name ?? "—",
+        latestAlertMaterialSku:
+          row.alerts[0]?.receivingRecord.material.sku ?? "—",
+      })),
     };
   } catch (error) {
-    console.error('Failed to load tracked PO numbers:', error);
+    console.error("Failed to load tracked PO numbers:", error);
     return { data: [] };
   }
 }
 
 export async function createExpectedPurchaseOrder(formData: FormData) {
-  await requireRole('ADMIN', 'PM');
+  await requireRole("ADMIN", "PM");
 
-  const poNumber = String(formData.get('poNumber') ?? '').trim();
+  const poNumber = String(formData.get("poNumber") ?? "").trim();
   const normalizedPoNumber = normalizeTrackedPoNumber(poNumber);
-  const jobIdValue = String(formData.get('jobId') ?? '').trim();
-  const note = String(formData.get('note') ?? '').trim();
+  const jobIdValue = String(formData.get("jobId") ?? "").trim();
+  const note = String(formData.get("note") ?? "").trim();
   const jobId = jobIdValue || null;
 
   if (!poNumber) {
-    redirect('/po-alerts?error=missing-po-number');
+    redirect("/po-alerts?error=missing-po-number");
   }
 
   if (jobId) {
-    const job = await prisma.job.findUnique({ where: { id: jobId }, select: { status: true } });
+    const job = await prisma.job.findUnique({
+      where: { id: jobId },
+      select: { status: true },
+    });
     if (!job) {
-      redirect('/po-alerts?error=invalid-job');
+      redirect("/po-alerts?error=invalid-job");
     }
   }
 
@@ -974,52 +1014,57 @@ export async function createExpectedPurchaseOrder(formData: FormData) {
         normalizedPoNumber,
         jobId,
         note: note || null,
-        ownerId: currentUser?.id ?? null
-      }
+        ownerId: currentUser?.id ?? null,
+      },
     });
   } catch (error) {
-    console.error('Failed to create tracked PO:', error);
-    redirect(`/po-alerts?error=save-failed&message=${encodeURIComponent(formatExpectedPoMutationError(error))}`);
+    console.error("Failed to create tracked PO:", error);
+    redirect(
+      `/po-alerts?error=save-failed&message=${encodeURIComponent(formatExpectedPoMutationError(error))}`,
+    );
   }
 
-  revalidatePath('/po-alerts');
-  revalidatePath('/alerts');
-  revalidatePath('/dashboard');
-  revalidatePath('/receive-materials');
-  redirect('/po-alerts?success=1');
+  revalidatePath("/po-alerts");
+  revalidatePath("/alerts");
+  revalidatePath("/dashboard");
+  revalidatePath("/receive-materials");
+  redirect("/po-alerts?success=1");
 }
 
 export async function markPurchaseOrderAlertSeen(formData: FormData) {
-  await requireRole('ADMIN');
+  await requireRole("ADMIN");
 
-  const expectedPoId = String(formData.get('expectedPoId') ?? '').trim();
+  const expectedPoId = String(formData.get("expectedPoId") ?? "").trim();
   const role = await getCurrentRole();
 
   if (!expectedPoId) {
-    redirect('/alerts?error=invalid-alert');
+    redirect("/alerts?error=invalid-alert");
   }
 
-  await updateTrackedPurchaseOrderStatus(expectedPoId, 'SEEN', role);
+  await updateTrackedPurchaseOrderStatus(expectedPoId, "SEEN", role);
 
   redirect(`/alerts?role=${encodeURIComponent(role)}&success=seen`);
 }
 
 export async function markPurchaseOrderAlertResolved(formData: FormData) {
-  await requireRole('ADMIN');
+  await requireRole("ADMIN");
 
-  const expectedPoId = String(formData.get('expectedPoId') ?? '').trim();
+  const expectedPoId = String(formData.get("expectedPoId") ?? "").trim();
   const role = await getCurrentRole();
 
   if (!expectedPoId) {
-    redirect('/alerts?error=invalid-alert');
+    redirect("/alerts?error=invalid-alert");
   }
 
-  await updateTrackedPurchaseOrderStatus(expectedPoId, 'RESOLVED', role);
+  await updateTrackedPurchaseOrderStatus(expectedPoId, "RESOLVED", role);
 
   redirect(`/alerts?role=${encodeURIComponent(role)}&success=resolved`);
 }
 
-export async function listPurchaseOrderAlerts(limit = 10, role: AppRole = 'ADMIN'): Promise<{ data: PurchaseOrderAlertRecord[] }> {
+export async function listPurchaseOrderAlerts(
+  limit = 10,
+  role: AppRole = "ADMIN",
+): Promise<{ data: PurchaseOrderAlertRecord[] }> {
   noStore();
 
   try {
@@ -1027,127 +1072,138 @@ export async function listPurchaseOrderAlerts(limit = 10, role: AppRole = 'ADMIN
 
     const alerts = await prisma.purchaseOrderAlert.findMany({
       where: {
-        expectedPo: accessFilter
+        expectedPo: accessFilter,
       },
       include: {
         owner: {
           select: {
-            email: true
-          }
+            email: true,
+          },
         },
         expectedPo: {
           include: {
             owner: {
-              select: { email: true }
+              select: { email: true },
             },
             job: {
-              select: { number: true, name: true }
-            }
-          }
+              select: { number: true, name: true },
+            },
+          },
         },
         receivingRecord: {
           include: {
-            material: { select: { name: true, sku: true } }
-          }
-        }
+            material: { select: { name: true, sku: true } },
+          },
+        },
       },
-      orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
-      take: limit
+      orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+      take: limit,
     });
 
     return {
       data: alerts.map((alert) => ({
         id: alert.id,
         ownerId: alert.ownerId ?? alert.expectedPo.ownerId,
-        ownerEmail: alert.owner?.email ?? alert.expectedPo.owner?.email ?? 'Unassigned',
+        ownerEmail:
+          alert.owner?.email ?? alert.expectedPo.owner?.email ?? "Unassigned",
         expectedPoId: alert.expectedPoId,
         poNumber: alert.expectedPo.poNumber,
         normalizedPoNumber: alert.expectedPo.normalizedPoNumber,
-        relatedJobLabel: alert.expectedPo.job ? `${alert.expectedPo.job.number} — ${alert.expectedPo.job.name}` : '—',
-        note: alert.expectedPo.note ?? '',
+        relatedJobLabel: alert.expectedPo.job
+          ? `${alert.expectedPo.job.number} — ${alert.expectedPo.job.name}`
+          : "—",
+        note: alert.expectedPo.note ?? "",
         status: serializeAlertStatus(alert.status),
         message: alert.message,
         receivingRecordId: alert.receivingRecordId,
         materialName: alert.receivingRecord.material.name,
         materialSku: alert.receivingRecord.material.sku,
-        invoiceNumber: alert.receivingRecord.invoiceNumber ?? '—',
+        invoiceNumber: alert.receivingRecord.invoiceNumber ?? "—",
         createdAt: alert.createdAt.toISOString(),
         updatedAt: alert.updatedAt.toISOString(),
         seenAt: alert.seenAt?.toISOString() ?? null,
         resolvedAt: alert.resolvedAt?.toISOString() ?? null,
-        triggerCount: alert.triggerCount
-      }))
+        triggerCount: alert.triggerCount,
+      })),
     };
   } catch (error) {
-    console.error('Failed to load PO alerts:', error);
+    console.error("Failed to load PO alerts:", error);
     return { data: [] };
   }
 }
 
 export async function receiveMaterial(formData: FormData) {
   try {
-    await requireRole('ADMIN');
+    await requireRole("ADMIN");
   } catch (error) {
-    redirect(`/receive-materials?error=save-failed&message=${encodeURIComponent(error instanceof Error ? error.message : 'Unauthorized.')}`);
+    redirect(
+      `/receive-materials?error=save-failed&message=${encodeURIComponent(error instanceof Error ? error.message : "Unauthorized.")}`,
+    );
   }
 
-  const materialId = String(formData.get('materialId') ?? '');
-  const destinationValue = String(formData.get('destination') ?? '').trim();
-  const legacyDestinationType = String(formData.get('destinationType') ?? '').trim();
-  const legacyJobId = String(formData.get('jobId') ?? '').trim();
-  const invoiceNumber = String(formData.get('invoiceNumber') ?? '').trim();
-  const vendor = String(formData.get('vendorName') ?? '').trim();
-  const notes = String(formData.get('notes') ?? '').trim();
-  const photoUrl = String(formData.get('photoUrl') ?? '').trim();
-  const quantity = Number(formData.get('quantity') ?? 0);
+  const materialId = String(formData.get("materialId") ?? "");
+  const destinationValue = String(formData.get("destination") ?? "").trim();
+  const legacyDestinationType = String(
+    formData.get("destinationType") ?? "",
+  ).trim();
+  const legacyJobId = String(formData.get("jobId") ?? "").trim();
+  const invoiceNumber = String(formData.get("invoiceNumber") ?? "").trim();
+  const vendor = String(formData.get("vendorName") ?? "").trim();
+  const notes = String(formData.get("notes") ?? "").trim();
+  const photoUrl = String(formData.get("photoUrl") ?? "").trim();
+  const quantity = Number(formData.get("quantity") ?? 0);
 
   const missingFields: string[] = [];
 
-  let destinationType: 'SHOP' | 'JOB' = 'SHOP';
+  let destinationType: "SHOP" | "JOB" = "SHOP";
   let jobId: string | null = null;
   let hasValidDestination = true;
 
   if (destinationValue) {
-    if (destinationValue === 'SHOP') {
-      destinationType = 'SHOP';
-    } else if (destinationValue.startsWith('JOB:')) {
-      destinationType = 'JOB';
+    if (destinationValue === "SHOP") {
+      destinationType = "SHOP";
+    } else if (destinationValue.startsWith("JOB:")) {
+      destinationType = "JOB";
       jobId = destinationValue.slice(4).trim() || null;
     } else {
       hasValidDestination = false;
     }
-  } else if (legacyDestinationType === 'JOB') {
-    destinationType = 'JOB';
+  } else if (legacyDestinationType === "JOB") {
+    destinationType = "JOB";
     jobId = legacyJobId || null;
   }
 
   if (!materialId) {
-    missingFields.push('material');
+    missingFields.push("material");
   }
 
   if (!Number.isFinite(quantity) || quantity <= 0) {
-    missingFields.push('quantity');
+    missingFields.push("quantity");
   }
 
-  if (!hasValidDestination || !['SHOP', 'JOB'].includes(destinationType)) {
-    missingFields.push('destination');
+  if (!hasValidDestination || !["SHOP", "JOB"].includes(destinationType)) {
+    missingFields.push("destination");
   }
 
   if (!invoiceNumber) {
-    missingFields.push('invoice number');
+    missingFields.push("invoice number");
   }
 
   if (!vendor) {
-    missingFields.push('vendor');
+    missingFields.push("vendor");
   }
 
   if (missingFields.length > 0) {
-    const message = encodeURIComponent(`Missing required fields: ${missingFields.join(', ')}.`);
-    redirect(`/receive-materials?error=missing-required-fields&message=${message}`);
+    const message = encodeURIComponent(
+      `Missing required fields: ${missingFields.join(", ")}.`,
+    );
+    redirect(
+      `/receive-materials?error=missing-required-fields&message=${message}`,
+    );
   }
 
-  if (destinationType === 'JOB' && !jobId) {
-    redirect('/receive-materials?error=job-required-for-job-destination');
+  if (destinationType === "JOB" && !jobId) {
+    redirect("/receive-materials?error=job-required-for-job-destination");
   }
 
   const normalizedQuantity = Math.floor(quantity);
@@ -1155,30 +1211,39 @@ export async function receiveMaterial(formData: FormData) {
 
   const material = await prisma.material.findUnique({
     where: { id: materialId },
-    select: { id: true }
+    select: { id: true },
   });
 
   if (!material) {
-    redirect('/receive-materials?error=invalid-material&message=Selected%20material%20was%20not%20found.');
+    redirect(
+      "/receive-materials?error=invalid-material&message=Selected%20material%20was%20not%20found.",
+    );
   }
 
-  if (destinationType === 'JOB' && jobId) {
+  if (destinationType === "JOB" && jobId) {
     const job = await prisma.job.findUnique({ where: { id: jobId } });
     if (!job) {
-      redirect('/receive-materials?error=invalid-job&message=Destination%20job%20was%20not%20found.');
+      redirect(
+        "/receive-materials?error=invalid-job&message=Destination%20job%20was%20not%20found.",
+      );
     }
-    if (job.status !== 'OPEN') {
-      redirect('/receive-materials?error=invalid-job&message=Destination%20job%20must%20be%20open.');
+    if (job.status !== "OPEN") {
+      redirect(
+        "/receive-materials?error=invalid-job&message=Destination%20job%20must%20be%20open.",
+      );
     }
   }
 
   try {
     await prisma.$transaction(async (tx) => {
-      const destinationJobId = destinationType === 'JOB' ? jobId : null;
-      const normalizedToLocation = normalizeTransactionLocation('locationToType', {
-        locationType: destinationType,
-        jobId: destinationJobId
-      });
+      const destinationJobId = destinationType === "JOB" ? jobId : null;
+      const normalizedToLocation = normalizeTransactionLocation(
+        "locationToType",
+        {
+          locationType: destinationType,
+          jobId: destinationJobId,
+        },
+      );
 
       const receipt = await tx.receivingRecord.create({
         data: {
@@ -1190,37 +1255,37 @@ export async function receiveMaterial(formData: FormData) {
           vendor: vendor || null,
           notes: notes || null,
           photoUrl: photoUrl || null,
-          receivedAt
-        }
+          receivedAt,
+        },
       });
 
       const matchedExpectedPo = await tx.expectedPurchaseOrder.findUnique({
         where: {
-          normalizedPoNumber: normalizeTrackedPoNumber(invoiceNumber)
+          normalizedPoNumber: normalizeTrackedPoNumber(invoiceNumber),
         },
         include: {
           job: {
             select: {
               number: true,
-              name: true
-            }
-          }
-        }
+              name: true,
+            },
+          },
+        },
       });
 
       if (matchedExpectedPo) {
         const relatedJobLabel = matchedExpectedPo.job
           ? `${matchedExpectedPo.job.number} — ${matchedExpectedPo.job.name}`
-          : 'no related job';
+          : "no related job";
         const message = `Tracked PO ${matchedExpectedPo.poNumber} matched receipt ${invoiceNumber} for ${normalizedQuantity} unit(s). Related job: ${relatedJobLabel}.`;
         const openNotification = await tx.purchaseOrderAlert.findFirst({
           where: {
             expectedPoId: matchedExpectedPo.id,
             status: {
-              not: 'RESOLVED'
-            }
+              not: "RESOLVED",
+            },
           },
-          orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }]
+          orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
         });
 
         if (openNotification) {
@@ -1230,13 +1295,13 @@ export async function receiveMaterial(formData: FormData) {
               receivingRecordId: receipt.id,
               ownerId: matchedExpectedPo.ownerId,
               message,
-              status: 'TRIGGERED',
+              status: "TRIGGERED",
               seenAt: null,
               resolvedAt: null,
               triggerCount: {
-                increment: 1
-              }
-            }
+                increment: 1,
+              },
+            },
           });
         } else {
           await tx.purchaseOrderAlert.create({
@@ -1245,32 +1310,38 @@ export async function receiveMaterial(formData: FormData) {
               receivingRecordId: receipt.id,
               ownerId: matchedExpectedPo.ownerId,
               message,
-              status: 'TRIGGERED',
-              triggerCount: 1
-            }
+              status: "TRIGGERED",
+              triggerCount: 1,
+            },
           });
         }
 
         await tx.expectedPurchaseOrder.update({
           where: { id: matchedExpectedPo.id },
           data: {
-            status: 'TRIGGERED',
+            status: "TRIGGERED",
             lastTriggeredAt: receivedAt,
             seenAt: null,
             resolvedAt: null,
             triggerCount: {
-              increment: 1
-            }
-          }
+              increment: 1,
+            },
+          },
         });
       }
 
-      await adjustInventoryBalance(tx, materialId, destinationType, destinationJobId, normalizedQuantity);
+      await adjustInventoryBalance(
+        tx,
+        materialId,
+        destinationType,
+        destinationJobId,
+        normalizedQuantity,
+      );
 
       await tx.inventoryTransaction.create({
         data: {
           materialId,
-          transactionType: 'RECEIVE',
+          transactionType: "RECEIVE",
           quantity: normalizedQuantity,
           locationFromType: null,
           locationFromJobId: null,
@@ -1281,62 +1352,70 @@ export async function receiveMaterial(formData: FormData) {
           notes: notes || null,
           photoUrl: photoUrl || null,
           receivingRecordId: receipt.id,
-          createdAt: receivedAt
-        }
+          createdAt: receivedAt,
+        },
       });
     });
 
     await syncMaterialQuantitiesFromBalances();
   } catch (error) {
-    let message = 'Unable to save receipt right now.';
+    let message = "Unable to save receipt right now.";
 
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
-      if (error.code === 'P2003') {
-        message = 'Receipt references a missing material or job record.';
-      } else if (error.code === 'P2011') {
-        message = `A required receive field is missing in the database write (${error.meta?.constraint ?? 'unknown constraint'}).`;
-      } else if (error.code === 'P2021') {
-        message = `Database schema is out of date (missing table: ${String(error.meta?.table ?? 'unknown')}). Run Prisma migrations.`;
-      } else if (error.code === 'P2022') {
-        message = `Database schema is out of date (missing column: ${String(error.meta?.column ?? 'unknown')}). Run Prisma migrations.`;
+      if (error.code === "P2003") {
+        message = "Receipt references a missing material or job record.";
+      } else if (error.code === "P2011") {
+        message = `A required receive field is missing in the database write (${error.meta?.constraint ?? "unknown constraint"}).`;
+      } else if (error.code === "P2021") {
+        message = `Database schema is out of date (missing table: ${String(error.meta?.table ?? "unknown")}). Run Prisma migrations.`;
+      } else if (error.code === "P2022") {
+        message = `Database schema is out of date (missing column: ${String(error.meta?.column ?? "unknown")}). Run Prisma migrations.`;
       }
     } else if (error instanceof Error && error.message) {
       message = error.message;
     }
 
-    console.error('Failed to receive material:', {
+    console.error("Failed to receive material:", {
       materialId,
       destinationType,
-      jobId: destinationType === 'JOB' ? jobId : null,
+      jobId: destinationType === "JOB" ? jobId : null,
       quantity: normalizedQuantity,
       invoiceNumber,
       vendor,
-      prismaCode: error instanceof Prisma.PrismaClientKnownRequestError ? error.code : null,
-      prismaMeta: error instanceof Prisma.PrismaClientKnownRequestError ? error.meta : null,
+      prismaCode:
+        error instanceof Prisma.PrismaClientKnownRequestError
+          ? error.code
+          : null,
+      prismaMeta:
+        error instanceof Prisma.PrismaClientKnownRequestError
+          ? error.meta
+          : null,
       message,
       stack: error instanceof Error ? error.stack : null,
-      error
+      error,
     });
-    redirect(`/receive-materials?error=save-failed&message=${encodeURIComponent(message)}`);
+    redirect(
+      `/receive-materials?error=save-failed&message=${encodeURIComponent(message)}`,
+    );
   }
 
-  revalidatePath('/dashboard');
-  revalidatePath('/materials');
-  revalidatePath('/inventory');
-  revalidatePath('/history');
-  revalidatePath('/receive-materials');
-  revalidatePath('/issue-materials');
-  revalidatePath('/po-alerts');
-  revalidatePath('/alerts');
-  redirect('/receive-materials?success=1');
+  revalidatePath("/dashboard");
+  revalidatePath("/materials");
+  revalidatePath("/inventory");
+  revalidatePath("/history");
+  revalidatePath("/receive-materials");
+  revalidatePath("/issue-materials");
+  revalidatePath("/po-alerts");
+  revalidatePath("/alerts");
+  redirect("/receive-materials?success=1");
 }
 
 export async function listReceivingRecords() {
   try {
     const receipts = await prisma.receivingRecord.findMany({
       include: { material: true, job: true },
-      orderBy: { receivedAt: 'desc' },
-      take: 20
+      orderBy: { receivedAt: "desc" },
+      take: 20,
     });
 
     return {
@@ -1348,159 +1427,203 @@ export async function listReceivingRecords() {
         quantity: receipt.quantity,
         destinationType: receipt.destinationType,
         destinationLabel:
-          receipt.destinationType === 'JOB' && receipt.job ? `${receipt.job.number} — ${receipt.job.name}` : 'Shop',
-        invoiceNumber: receipt.invoiceNumber ?? '—',
-        vendorName: receipt.vendor ?? '—',
-        notes: receipt.notes ?? '—'
-      }))
+          receipt.destinationType === "JOB" && receipt.job
+            ? `${receipt.job.number} — ${receipt.job.name}`
+            : "Shop",
+        invoiceNumber: receipt.invoiceNumber ?? "—",
+        vendorName: receipt.vendor ?? "—",
+        notes: receipt.notes ?? "—",
+      })),
     };
   } catch (error) {
-    console.error('Failed to load receiving records:', error);
+    console.error("Failed to load receiving records:", error);
     return { data: [] };
   }
 }
 
 export async function transferMaterial(formData: FormData) {
   try {
-    await requireRole('ADMIN');
+    await requireRole("ADMIN");
   } catch {
-    redirect('/transfer-materials?error=save-failed');
+    redirect("/transfer-materials?error=save-failed");
   }
 
-  const materialId = String(formData.get('materialId') ?? '');
-  const fromLocation = String(formData.get('fromLocation') ?? '');
-  const toLocation = String(formData.get('toLocation') ?? '');
-  const notes = String(formData.get('notes') ?? '').trim();
-  const quantity = Number(formData.get('quantity') ?? 0);
+  const materialId = String(formData.get("materialId") ?? "");
+  const fromLocation = String(formData.get("fromLocation") ?? "");
+  const toLocation = String(formData.get("toLocation") ?? "");
+  const notes = String(formData.get("notes") ?? "").trim();
+  const quantity = Number(formData.get("quantity") ?? 0);
 
   const source = parseLocation(fromLocation);
   const destination = parseLocation(toLocation);
 
-  if (!materialId || !source || !destination || !Number.isFinite(quantity) || quantity <= 0 || fromLocation === toLocation) {
-    redirect('/transfer-materials?error=invalid-transfer');
+  if (
+    !materialId ||
+    !source ||
+    !destination ||
+    !Number.isFinite(quantity) ||
+    quantity <= 0 ||
+    fromLocation === toLocation
+  ) {
+    redirect("/transfer-materials?error=invalid-transfer");
   }
 
   const normalizedQuantity = Math.floor(quantity);
 
   try {
     await prisma.$transaction(async (tx) => {
-      const normalizedFromLocation = normalizeTransactionLocation('locationFromType', {
-        locationType: source.locationType,
-        jobId: source.jobId
-      });
-      const normalizedToLocation = normalizeTransactionLocation('locationToType', {
-        locationType: destination.locationType,
-        jobId: destination.jobId
-      });
+      const normalizedFromLocation = normalizeTransactionLocation(
+        "locationFromType",
+        {
+          locationType: source.locationType,
+          jobId: source.jobId,
+        },
+      );
+      const normalizedToLocation = normalizeTransactionLocation(
+        "locationToType",
+        {
+          locationType: destination.locationType,
+          jobId: destination.jobId,
+        },
+      );
 
-      if (source.locationType === 'JOB' && source.jobId) {
-        const sourceJob = await tx.job.findUnique({ where: { id: source.jobId } });
-        if (!sourceJob || sourceJob.status !== 'OPEN') {
-          throw new Error('Source job must be open.');
+      if (source.locationType === "JOB" && source.jobId) {
+        const sourceJob = await tx.job.findUnique({
+          where: { id: source.jobId },
+        });
+        if (!sourceJob || sourceJob.status !== "OPEN") {
+          throw new Error("Source job must be open.");
         }
       }
 
-      if (destination.locationType === 'JOB' && destination.jobId) {
-        const destinationJob = await tx.job.findUnique({ where: { id: destination.jobId } });
-        if (!destinationJob || destinationJob.status !== 'OPEN') {
-          throw new Error('Destination job must be open.');
+      if (destination.locationType === "JOB" && destination.jobId) {
+        const destinationJob = await tx.job.findUnique({
+          where: { id: destination.jobId },
+        });
+        if (!destinationJob || destinationJob.status !== "OPEN") {
+          throw new Error("Destination job must be open.");
         }
       }
 
-      await adjustInventoryBalance(tx, materialId, source.locationType, source.jobId, -normalizedQuantity);
-      await adjustInventoryBalance(tx, materialId, destination.locationType, destination.jobId, normalizedQuantity);
+      await adjustInventoryBalance(
+        tx,
+        materialId,
+        source.locationType,
+        source.jobId,
+        -normalizedQuantity,
+      );
+      await adjustInventoryBalance(
+        tx,
+        materialId,
+        destination.locationType,
+        destination.jobId,
+        normalizedQuantity,
+      );
 
       await tx.inventoryTransaction.create({
         data: {
           materialId,
-          transactionType: 'TRANSFER',
+          transactionType: "TRANSFER",
           quantity: normalizedQuantity,
           locationFromType: normalizedFromLocation.locationType,
           locationFromJobId: normalizedFromLocation.jobId,
           locationToType: normalizedToLocation.locationType,
           locationToJobId: normalizedToLocation.jobId,
-          notes: notes || null
-        }
+          notes: notes || null,
+        },
       });
     });
 
     await syncMaterialQuantitiesFromBalances();
   } catch (error) {
-    console.error('Failed to transfer material:', error);
-    redirect('/transfer-materials?error=save-failed');
+    console.error("Failed to transfer material:", error);
+    redirect("/transfer-materials?error=save-failed");
   }
 
-  revalidatePath('/dashboard');
-  revalidatePath('/materials');
-  revalidatePath('/history');
-  revalidatePath('/transfer-materials');
-  revalidatePath('/issue-materials');
-  redirect('/transfer-materials?success=1');
+  revalidatePath("/dashboard");
+  revalidatePath("/materials");
+  revalidatePath("/history");
+  revalidatePath("/transfer-materials");
+  revalidatePath("/issue-materials");
+  redirect("/transfer-materials?success=1");
 }
 
 export async function issueMaterial(formData: FormData) {
   try {
-    await requireRole('ADMIN');
+    await requireRole("ADMIN");
   } catch {
-    redirect('/issue-materials?error=save-failed');
+    redirect("/issue-materials?error=save-failed");
   }
 
-  const materialId = String(formData.get('materialId') ?? '');
-  const fromLocation = String(formData.get('fromLocation') ?? '');
-  const notes = String(formData.get('notes') ?? '').trim();
-  const quantity = Number(formData.get('quantity') ?? 0);
+  const materialId = String(formData.get("materialId") ?? "");
+  const fromLocation = String(formData.get("fromLocation") ?? "");
+  const notes = String(formData.get("notes") ?? "").trim();
+  const quantity = Number(formData.get("quantity") ?? 0);
   const source = parseLocation(fromLocation);
 
   if (!materialId || !source || !Number.isFinite(quantity) || quantity <= 0) {
-    redirect('/issue-materials?error=invalid-issue');
+    redirect("/issue-materials?error=invalid-issue");
   }
 
   const normalizedQuantity = Math.floor(quantity);
 
   try {
     await prisma.$transaction(async (tx) => {
-      const normalizedFromLocation = normalizeTransactionLocation('locationFromType', {
-        locationType: source.locationType,
-        jobId: source.jobId
-      });
+      const normalizedFromLocation = normalizeTransactionLocation(
+        "locationFromType",
+        {
+          locationType: source.locationType,
+          jobId: source.jobId,
+        },
+      );
 
-      if (source.locationType === 'JOB' && source.jobId) {
-        const sourceJob = await tx.job.findUnique({ where: { id: source.jobId } });
-        if (!sourceJob || sourceJob.status !== 'OPEN') {
-          throw new Error('Source job must be open.');
+      if (source.locationType === "JOB" && source.jobId) {
+        const sourceJob = await tx.job.findUnique({
+          where: { id: source.jobId },
+        });
+        if (!sourceJob || sourceJob.status !== "OPEN") {
+          throw new Error("Source job must be open.");
         }
       }
 
-      await adjustInventoryBalance(tx, materialId, source.locationType, source.jobId, -normalizedQuantity);
+      await adjustInventoryBalance(
+        tx,
+        materialId,
+        source.locationType,
+        source.jobId,
+        -normalizedQuantity,
+      );
 
       await tx.inventoryTransaction.create({
         data: {
           materialId,
-          transactionType: 'ISSUE',
+          transactionType: "ISSUE",
           quantity: normalizedQuantity,
           locationFromType: normalizedFromLocation.locationType,
           locationFromJobId: normalizedFromLocation.jobId,
           locationToType: null,
           locationToJobId: null,
-          notes: notes || null
-        }
+          notes: notes || null,
+        },
       });
     });
 
     await syncMaterialQuantitiesFromBalances();
   } catch (error) {
-    console.error('Failed to issue material:', error);
-    redirect('/issue-materials?error=save-failed');
+    console.error("Failed to issue material:", error);
+    redirect("/issue-materials?error=save-failed");
   }
 
-  revalidatePath('/dashboard');
-  revalidatePath('/materials');
-  revalidatePath('/history');
-  revalidatePath('/issue-materials');
-  redirect('/issue-materials?success=1');
+  revalidatePath("/dashboard");
+  revalidatePath("/materials");
+  revalidatePath("/history");
+  revalidatePath("/issue-materials");
+  redirect("/issue-materials?success=1");
 }
 
-export async function listInventoryBalances(): Promise<{ data: InventoryBalanceView[] }> {
+export async function listInventoryBalances(): Promise<{
+  data: InventoryBalanceView[];
+}> {
   try {
     const materials = await prisma.material.findMany({
       select: {
@@ -1508,9 +1631,9 @@ export async function listInventoryBalances(): Promise<{ data: InventoryBalanceV
         sku: true,
         name: true,
         unit: true,
-        minStock: true
+        minStock: true,
       },
-      orderBy: { name: 'asc' }
+      orderBy: { name: "asc" },
     });
 
     if (materials.length === 0) {
@@ -1519,7 +1642,7 @@ export async function listInventoryBalances(): Promise<{ data: InventoryBalanceV
 
     const balances = await prisma.inventoryBalance.findMany({
       where: {
-        materialId: { in: materials.map((material) => material.id) }
+        materialId: { in: materials.map((material) => material.id) },
       },
       select: {
         materialId: true,
@@ -1529,10 +1652,10 @@ export async function listInventoryBalances(): Promise<{ data: InventoryBalanceV
         job: {
           select: {
             number: true,
-            name: true
-          }
-        }
-      }
+            name: true,
+          },
+        },
+      },
     });
 
     const balancesByMaterialId = new Map<string, typeof balances>();
@@ -1549,16 +1672,19 @@ export async function listInventoryBalances(): Promise<{ data: InventoryBalanceV
     return {
       data: materials.map((material) => {
         const materialBalances = balancesByMaterialId.get(material.id) ?? [];
-        const totalQuantity = materialBalances.reduce((sum, balance) => sum + balance.quantity, 0);
+        const totalQuantity = materialBalances.reduce(
+          (sum, balance) => sum + balance.quantity,
+          0,
+        );
         const shopQuantity = materialBalances
-          .filter((balance) => balance.locationType === 'SHOP')
+          .filter((balance) => balance.locationType === "SHOP")
           .reduce((sum, balance) => sum + balance.quantity, 0);
         const jobQuantities = materialBalances
-          .filter((balance) => balance.locationType === 'JOB' && balance.job)
+          .filter((balance) => balance.locationType === "JOB" && balance.job)
           .map((balance) => ({
             jobId: balance.jobId as string,
             jobLabel: `${balance.job?.number} — ${balance.job?.name}`,
-            quantity: balance.quantity
+            quantity: balance.quantity,
           }))
           .sort((a, b) => a.jobLabel.localeCompare(b.jobLabel));
 
@@ -1570,93 +1696,94 @@ export async function listInventoryBalances(): Promise<{ data: InventoryBalanceV
           minStock: material.minStock,
           totalQuantity,
           shopQuantity,
-          jobQuantities
+          jobQuantities,
         };
-      })
+      }),
     };
   } catch (error) {
-    console.error('Failed to load inventory balances:', error);
+    console.error("Failed to load inventory balances:", error);
     return { data: [] };
   }
 }
 
-export async function listInventoryTransactions(): Promise<{ data: InventoryTransactionRecord[] }> {
+export async function listInventoryTransactions(): Promise<{
+  data: InventoryTransactionRecord[];
+}> {
   try {
-    const transactions = await prisma.inventoryTransaction.findMany({
-      include: {
-        material: true,
-        locationFromJob: true,
-        locationToJob: true
-      },
-      orderBy: { createdAt: 'desc' }
-    });
+    const transactions = await listInventoryTransactionsQuery();
 
-    return {
-      data: transactions.map((entry) => ({
-        id: entry.id,
-        createdAt: entry.createdAt.toISOString(),
-        type: entry.transactionType,
-        materialSku: entry.material.sku,
-        materialName: entry.material.name,
-        quantity: entry.quantity,
-        unit: entry.material.unit,
-        locationFrom: formatLocationLabel(entry.locationFromType, entry.locationFromJob),
-        locationTo:
-          entry.transactionType === 'ISSUE'
-            ? 'Production / Consumption'
-            : formatLocationLabel(entry.locationToType, entry.locationToJob),
-        invoiceNumber: entry.invoiceNumber ?? '—',
-        vendorName: entry.vendor ?? '—',
-        notes: entry.notes ?? '—',
-        hasPhoto: Boolean(entry.photoUrl)
-      }))
-    };
+    return { data: transactions };
   } catch (error) {
-    console.error('Failed to load inventory history:', error);
+    console.error("Failed to load inventory history:", error);
     return { data: [] };
   }
 }
 
-export async function getDashboardData(role: AppRole = 'ADMIN'): Promise<DashboardView> {
+export async function getDashboardData(
+  role: AppRole = "ADMIN",
+): Promise<DashboardView> {
   try {
-    const [totalSku, openJobs, onHandAggregate, materials, balanceSums, balances, txns, trackedPoAlerts, poAlerts, activeAlertCount] = await Promise.all([
+    const [
+      totalSku,
+      openJobs,
+      onHandAggregate,
+      materials,
+      balanceSums,
+      balances,
+      txns,
+      trackedPoAlerts,
+      poAlerts,
+      activeAlertCount,
+    ] = await Promise.all([
       prisma.material.count(),
-      prisma.job.count({ where: { status: 'OPEN' } }),
+      prisma.job.count({ where: { status: "OPEN" } }),
       prisma.inventoryBalance.aggregate({ _sum: { quantity: true } }),
       prisma.material.findMany({
         select: {
           id: true,
-          minStock: true
-        }
+          minStock: true,
+        },
       }),
       prisma.inventoryBalance.groupBy({
-        by: ['materialId'],
-        _sum: { quantity: true }
+        by: ["materialId"],
+        _sum: { quantity: true },
       }),
       prisma.inventoryBalance.findMany({
         include: {
           material: true,
-          job: true
+          job: true,
         },
-        orderBy: [{ material: { name: 'asc' } }, { locationType: 'asc' }, { job: { number: 'asc' } }]
+        orderBy: [
+          { material: { name: "asc" } },
+          { locationType: "asc" },
+          { job: { number: "asc" } },
+        ],
       }),
       listInventoryTransactions(),
       listExpectedPurchaseOrders(role),
       listPurchaseOrderAlerts(6, role),
-      getActiveAlertCount(role)
+      getActiveAlertCount(role),
     ]);
 
-    const quantityByMaterialId = new Map(balanceSums.map((entry) => [entry.materialId, entry._sum.quantity ?? 0]));
+    const quantityByMaterialId = new Map(
+      balanceSums.map((entry) => [entry.materialId, entry._sum.quantity ?? 0]),
+    );
 
-    const lowStock = materials.filter((material) => (quantityByMaterialId.get(material.id) ?? 0) < material.minStock).length;
+    const lowStock = materials.filter(
+      (material) =>
+        (quantityByMaterialId.get(material.id) ?? 0) < material.minStock,
+    ).length;
 
     const inventoryRows: InventoryAtGlanceRow[] = balances.map((balance) => ({
       id: balance.id,
       materialName: balance.material.name,
       materialSku: balance.material.sku,
-      locationLabel: balance.locationType === 'SHOP' ? 'SHOP' : `${balance.job?.number} — ${balance.job?.name}`,
+      locationLabel:
+        balance.locationType === "SHOP"
+          ? "SHOP"
+          : `${balance.job?.number} — ${balance.job?.name}`,
       quantity: balance.quantity,
-      unit: balance.material.unit
+      unit: balance.material.unit,
     }));
 
     return {
@@ -1668,10 +1795,10 @@ export async function getDashboardData(role: AppRole = 'ADMIN'): Promise<Dashboa
       inventoryRows,
       trackedPoAlerts: trackedPoAlerts.data,
       poAlerts: poAlerts.data,
-      activeAlertCount
+      activeAlertCount,
     };
   } catch (error) {
-    console.error('Failed to load dashboard data:', error);
+    console.error("Failed to load dashboard data:", error);
     return {
       totalSku: 0,
       lowStock: 0,
@@ -1681,20 +1808,28 @@ export async function getDashboardData(role: AppRole = 'ADMIN'): Promise<Dashboa
       inventoryRows: [],
       trackedPoAlerts: [],
       poAlerts: [],
-      activeAlertCount: 0
+      activeAlertCount: 0,
     };
   }
 }
 
-export async function getReportsData(filters: ReportsFilterInput = {}): Promise<{ data: ReportsView }> {
+export async function getReportsData(
+  filters: ReportsFilterInput = {},
+): Promise<{ data: ReportsView }> {
   noStore();
 
   const normalizedStartDate = filters.startDate?.trim() || null;
   const normalizedEndDate = filters.endDate?.trim() || null;
   const normalizedJobId = filters.jobId?.trim() || null;
   const normalizedMaterialId = filters.materialId?.trim() || null;
-  const startDate = parseDateFilterBoundary(normalizedStartDate ?? undefined, 'start');
-  const endDateExclusive = parseDateFilterBoundary(normalizedEndDate ?? undefined, 'end');
+  const startDate = parseDateFilterBoundary(
+    normalizedStartDate ?? undefined,
+    "start",
+  );
+  const endDateExclusive = parseDateFilterBoundary(
+    normalizedEndDate ?? undefined,
+    "end",
+  );
 
   const createdAtFilter: Prisma.DateTimeFilter = {};
 
@@ -1719,30 +1854,38 @@ export async function getReportsData(filters: ReportsFilterInput = {}): Promise<
   if (normalizedJobId) {
     transactionWhere.OR = [
       { locationFromJobId: normalizedJobId },
-      { locationToJobId: normalizedJobId }
+      { locationToJobId: normalizedJobId },
     ];
   }
 
-  const resolvedTransactionWhere = Object.keys(transactionWhere).length > 0 ? transactionWhere : undefined;
+  const resolvedTransactionWhere =
+    Object.keys(transactionWhere).length > 0 ? transactionWhere : undefined;
 
   try {
-    const [materials, jobs, balances, transactions, issueGroups, activityCounts] = await Promise.all([
+    const [
+      materials,
+      jobs,
+      balances,
+      transactions,
+      issueGroups,
+      activityCounts,
+    ] = await Promise.all([
       prisma.material.findMany({
         select: {
           id: true,
           sku: true,
           name: true,
-          unit: true
+          unit: true,
         },
-        orderBy: { name: 'asc' }
+        orderBy: { name: "asc" },
       }),
       prisma.job.findMany({
         select: {
           id: true,
           number: true,
-          name: true
+          name: true,
         },
-        orderBy: [{ number: 'asc' }, { name: 'asc' }]
+        orderBy: [{ number: "asc" }, { name: "asc" }],
       }),
       prisma.inventoryBalance.findMany({
         include: {
@@ -1751,74 +1894,75 @@ export async function getReportsData(filters: ReportsFilterInput = {}): Promise<
               id: true,
               sku: true,
               name: true,
-              unit: true
-            }
+              unit: true,
+            },
           },
           job: {
             select: {
               id: true,
               number: true,
-              name: true
-            }
-          }
+              name: true,
+            },
+          },
         },
-        orderBy: [{ material: { name: 'asc' } }, { locationType: 'asc' }, { job: { number: 'asc' } }]
+        orderBy: [
+          { material: { name: "asc" } },
+          { locationType: "asc" },
+          { job: { number: "asc" } },
+        ],
       }),
-      prisma.inventoryTransaction.findMany({
+      listInventoryTransactionsQuery({
         where: resolvedTransactionWhere,
-        include: {
-          material: true,
-          locationFromJob: true,
-          locationToJob: true
-        },
-        orderBy: { createdAt: 'desc' },
-        take: 10
+        take: 10,
       }),
       prisma.inventoryTransaction.groupBy({
-        by: ['materialId'],
+        by: ["materialId"],
         where: {
-          transactionType: 'ISSUE',
-          ...(resolvedTransactionWhere ?? {})
+          transactionType: "ISSUE",
+          ...(resolvedTransactionWhere ?? {}),
         },
         _sum: { quantity: true },
         _count: { _all: true },
         orderBy: {
           _sum: {
-            quantity: 'desc'
-          }
+            quantity: "desc",
+          },
         },
-        take: 5
+        take: 5,
       }),
       prisma.inventoryTransaction.groupBy({
-        by: ['transactionType'],
+        by: ["transactionType"],
         where: resolvedTransactionWhere,
         _count: { _all: true },
-        _sum: { quantity: true }
-      })
+        _sum: { quantity: true },
+      }),
     ]);
 
     const selectedJob = jobs.find((job) => job.id === normalizedJobId) ?? null;
-    const selectedMaterial = materials.find((material) => material.id === normalizedMaterialId) ?? null;
+    const selectedMaterial =
+      materials.find((material) => material.id === normalizedMaterialId) ??
+      null;
 
-    const reportMode: ReportsView['reportMetadata']['mode'] =
+    const reportMode: ReportsView["reportMetadata"]["mode"] =
       selectedJob && selectedMaterial
-        ? 'Specific Job + Specific Material'
+        ? "Specific Job + Specific Material"
         : selectedJob
-          ? 'Specific Job'
+          ? "Specific Job"
           : selectedMaterial
-            ? 'Specific Material'
-            : 'General';
+            ? "Specific Material"
+            : "General";
 
     const selectedJobMaterialIds = selectedJob
       ? new Set(
           balances
             .filter(
               (balance) =>
-                balance.locationType === 'JOB' &&
+                balance.locationType === "JOB" &&
                 balance.jobId === selectedJob.id &&
-                (!selectedMaterial || balance.materialId === selectedMaterial.id)
+                (!selectedMaterial ||
+                  balance.materialId === selectedMaterial.id),
             )
-            .map((balance) => balance.materialId)
+            .map((balance) => balance.materialId),
         )
       : null;
 
@@ -1831,7 +1975,7 @@ export async function getReportsData(filters: ReportsFilterInput = {}): Promise<
         return true;
       }
 
-      if (balance.locationType === 'JOB') {
+      if (balance.locationType === "JOB") {
         return balance.jobId === selectedJob.id;
       }
 
@@ -1848,10 +1992,10 @@ export async function getReportsData(filters: ReportsFilterInput = {}): Promise<
         unit: balance.material.unit,
         shopQuantity: 0,
         totalJobQuantity: 0,
-        totalQuantity: 0
+        totalQuantity: 0,
       };
 
-      if (balance.locationType === 'SHOP') {
+      if (balance.locationType === "SHOP") {
         existing.shopQuantity += balance.quantity;
       } else {
         existing.totalJobQuantity += balance.quantity;
@@ -1861,12 +2005,16 @@ export async function getReportsData(filters: ReportsFilterInput = {}): Promise<
       inventorySummaryByMaterial.set(balance.materialId, existing);
     }
 
-    const inventoryRows = Array.from(inventorySummaryByMaterial.values()).sort((a, b) =>
-      a.materialName.localeCompare(b.materialName)
+    const inventoryRows = Array.from(inventorySummaryByMaterial.values()).sort(
+      (a, b) => a.materialName.localeCompare(b.materialName),
     );
 
     const issueMaterialIds = issueGroups.map((entry) => entry.materialId);
-    const issueMaterialMap = new Map(materials.filter((material) => issueMaterialIds.includes(material.id)).map((material) => [material.id, material]));
+    const issueMaterialMap = new Map(
+      materials
+        .filter((material) => issueMaterialIds.includes(material.id))
+        .map((material) => [material.id, material]),
+    );
 
     const topMaterials: TopUsedMaterialRow[] = issueGroups
       .map((entry) => {
@@ -1882,31 +2030,16 @@ export async function getReportsData(filters: ReportsFilterInput = {}): Promise<
           materialName: material.name,
           unit: material.unit,
           issueCount: entry._count._all,
-          issuedQuantity: Math.abs(entry._sum.quantity ?? 0)
+          issuedQuantity: Math.abs(entry._sum.quantity ?? 0),
         };
       })
       .filter((entry): entry is TopUsedMaterialRow => entry !== null);
 
-    const recentActivity: InventoryTransactionRecord[] = transactions.map((entry) => ({
-      id: entry.id,
-      createdAt: entry.createdAt.toISOString(),
-      type: entry.transactionType,
-      materialSku: entry.material.sku,
-      materialName: entry.material.name,
-      quantity: entry.quantity,
-      unit: entry.material.unit,
-      locationFrom: formatLocationLabel(entry.locationFromType, entry.locationFromJob),
-      locationTo:
-        entry.transactionType === 'ISSUE'
-          ? 'Production / Consumption'
-          : formatLocationLabel(entry.locationToType, entry.locationToJob),
-      invoiceNumber: entry.invoiceNumber ?? '—',
-      vendorName: entry.vendor ?? '—',
-      notes: entry.notes ?? '—',
-      hasPhoto: Boolean(entry.photoUrl)
-    }));
+    const recentActivity: InventoryTransactionRecord[] = transactions;
 
-    const summaryByType = new Map(activityCounts.map((entry) => [entry.transactionType, entry]));
+    const summaryByType = new Map(
+      activityCounts.map((entry) => [entry.transactionType, entry]),
+    );
 
     return {
       data: {
@@ -1914,40 +2047,45 @@ export async function getReportsData(filters: ReportsFilterInput = {}): Promise<
           startDate: normalizedStartDate,
           endDate: normalizedEndDate,
           jobId: selectedJob?.id ?? null,
-          materialId: selectedMaterial?.id ?? null
+          materialId: selectedMaterial?.id ?? null,
         },
         filterOptions: {
           jobs,
           materials: materials.map((material) => ({
             id: material.id,
             sku: material.sku,
-            name: material.name
-          }))
+            name: material.name,
+          })),
         },
         reportMetadata: {
           mode: reportMode,
           selectedJob,
-          selectedMaterial
+          selectedMaterial,
         },
         inventorySummary: {
           materialCount: inventoryRows.length,
-          rows: inventoryRows
+          rows: inventoryRows,
         },
         topMaterials,
         activitySummary: {
-          totalTransactions: activityCounts.reduce((sum, entry) => sum + entry._count._all, 0),
-          receiveCount: summaryByType.get('RECEIVE')?._count._all ?? 0,
-          transferCount: summaryByType.get('TRANSFER')?._count._all ?? 0,
-          issueCount: summaryByType.get('ISSUE')?._count._all ?? 0,
-          adjustmentCount: summaryByType.get('ADJUSTMENT')?._count._all ?? 0,
-          receiveQuantity: summaryByType.get('RECEIVE')?._sum.quantity ?? 0,
-          issueQuantity: Math.abs(summaryByType.get('ISSUE')?._sum.quantity ?? 0)
+          totalTransactions: activityCounts.reduce(
+            (sum, entry) => sum + entry._count._all,
+            0,
+          ),
+          receiveCount: summaryByType.get("RECEIVE")?._count._all ?? 0,
+          transferCount: summaryByType.get("TRANSFER")?._count._all ?? 0,
+          issueCount: summaryByType.get("ISSUE")?._count._all ?? 0,
+          adjustmentCount: summaryByType.get("ADJUSTMENT")?._count._all ?? 0,
+          receiveQuantity: summaryByType.get("RECEIVE")?._sum.quantity ?? 0,
+          issueQuantity: Math.abs(
+            summaryByType.get("ISSUE")?._sum.quantity ?? 0,
+          ),
         },
-        recentActivity
-      }
+        recentActivity,
+      },
     };
   } catch (error) {
-    console.error('Failed to load reports data:', error);
+    console.error("Failed to load reports data:", error);
 
     return {
       data: {
@@ -1955,26 +2093,27 @@ export async function getReportsData(filters: ReportsFilterInput = {}): Promise<
           startDate: normalizedStartDate,
           endDate: normalizedEndDate,
           jobId: normalizedJobId,
-          materialId: normalizedMaterialId
+          materialId: normalizedMaterialId,
         },
         filterOptions: {
           jobs: [],
-          materials: []
+          materials: [],
         },
         reportMetadata: {
-          mode: normalizedJobId && normalizedMaterialId
-            ? 'Specific Job + Specific Material'
-            : normalizedJobId
-              ? 'Specific Job'
-              : normalizedMaterialId
-                ? 'Specific Material'
-                : 'General',
+          mode:
+            normalizedJobId && normalizedMaterialId
+              ? "Specific Job + Specific Material"
+              : normalizedJobId
+                ? "Specific Job"
+                : normalizedMaterialId
+                  ? "Specific Material"
+                  : "General",
           selectedJob: null,
-          selectedMaterial: null
+          selectedMaterial: null,
         },
         inventorySummary: {
           materialCount: 0,
-          rows: []
+          rows: [],
         },
         topMaterials: [],
         activitySummary: {
@@ -1984,10 +2123,10 @@ export async function getReportsData(filters: ReportsFilterInput = {}): Promise<
           issueCount: 0,
           adjustmentCount: 0,
           receiveQuantity: 0,
-          issueQuantity: 0
+          issueQuantity: 0,
         },
-        recentActivity: []
-      }
+        recentActivity: [],
+      },
     };
   }
 }
