@@ -7,6 +7,7 @@ export type SessionPayload = {
   email: string;
   issuedAt: number;
   role: SessionRole;
+  name?: string;
 };
 
 function getAuthSecret() {

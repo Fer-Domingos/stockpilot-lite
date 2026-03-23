@@ -17,7 +17,8 @@ const linksByRole: Record<AppRole, Array<{ href: string; label: string; hasCount
     { href: '/po-alerts', label: 'PO Alerts' },
     { href: '/alerts', label: 'Alerts', hasCounter: true },
     { href: '/history', label: 'History' },
-    { href: '/reports', label: 'Reports' }
+    { href: '/reports', label: 'Reports' },
+    { href: '/users', label: 'Users' }
   ],
   PM: [
     { href: '/dashboard', label: 'Dashboard' },

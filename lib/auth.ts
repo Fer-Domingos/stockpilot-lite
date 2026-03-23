@@ -1,15 +1,18 @@
 import { randomBytes, scryptSync, timingSafeEqual } from 'crypto';
+import { UserRole } from '@prisma/client';
+
 import { prisma } from '@/lib/prisma';
 
-const ADMIN_EMAIL = 'admin@stockpilot.com';
-const ADMIN_PASSWORD = '123456';
+const DEFAULT_ADMIN_EMAIL = 'admin@stockpilot.com';
+const DEFAULT_ADMIN_NAME = 'System Administrator';
+const DEFAULT_ADMIN_PASSWORD = '123456';
 
-function hashPassword(password: string, salt = randomBytes(16).toString('hex')) {
+export function hashPassword(password: string, salt = randomBytes(16).toString('hex')) {
   const hash = scryptSync(password, salt, 64).toString('hex');
   return `${salt}:${hash}`;
 }
 
-function verifyPassword(password: string, passwordHash: string) {
+export function verifyPassword(password: string, passwordHash: string) {
   const [salt, storedHash] = passwordHash.split(':');
   if (!salt || !storedHash) {
     return false;
@@ -26,21 +29,28 @@ function verifyPassword(password: string, passwordHash: string) {
 }
 
 export async function ensureDefaultAdminUser() {
-  const passwordHash = hashPassword(ADMIN_PASSWORD);
+  const passwordHash = hashPassword(DEFAULT_ADMIN_PASSWORD);
 
   return prisma.adminUser.upsert({
-    where: { email: ADMIN_EMAIL },
-    update: {},
+    where: { email: DEFAULT_ADMIN_EMAIL },
+    update: {
+      name: DEFAULT_ADMIN_NAME,
+      role: UserRole.ADMIN,
+    },
     create: {
-      email: ADMIN_EMAIL,
-      passwordHash
-    }
+      name: DEFAULT_ADMIN_NAME,
+      email: DEFAULT_ADMIN_EMAIL,
+      passwordHash,
+      role: UserRole.ADMIN,
+    },
   });
 }
 
 export async function verifyAdminCredentials(email: string, password: string) {
   await ensureDefaultAdminUser();
-  const user = await prisma.adminUser.findUnique({ where: { email: email.toLowerCase().trim() } });
+  const user = await prisma.adminUser.findUnique({
+    where: { email: email.toLowerCase().trim() },
+  });
 
   if (!user) {
     return null;
