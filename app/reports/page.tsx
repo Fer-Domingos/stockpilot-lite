@@ -1,5 +1,6 @@
 import { getReportsData } from "@/app/actions";
 import { AppShell } from "@/app/components/app-shell";
+import { LocalDateTime } from "@/app/components/local-date-time";
 import { ReportsTimezoneField } from "@/app/components/reports-timezone-field";
 import { getRole } from "@/lib/role";
 
@@ -13,20 +14,6 @@ type ReportsSearchParams = {
   materialId?: string;
   timeZoneOffsetMinutes?: string;
 };
-
-function formatDate(value: string | null) {
-  if (!value) {
-    return "All time";
-  }
-
-  const parsed = new Date(`${value}T00:00:00Z`);
-
-  if (Number.isNaN(parsed.getTime())) {
-    return value;
-  }
-
-  return parsed.toLocaleDateString();
-}
 
 function buildReportsQuery(params: ReportsSearchParams) {
   const query = new URLSearchParams();
@@ -72,8 +59,8 @@ export default async function ReportsPage({
           <div>
             <h3>Reports</h3>
             <p className="muted">
-              Reporting window: {formatDate(data.filters.startDate)} to{" "}
-              {formatDate(data.filters.endDate)}.
+              Reporting window: <LocalDateTime value={data.filters.startDate} kind="date" emptyLabel="All time" /> to{" "}
+              <LocalDateTime value={data.filters.endDate} kind="date" emptyLabel="All time" />.
             </p>
             <p className="muted">
               Mode: {data.reportMetadata.mode}
@@ -332,7 +319,7 @@ export default async function ReportsPage({
                 ) : (
                   data.recentActivity.map((entry) => (
                     <tr key={entry.id}>
-                      <td>{new Date(entry.createdAt).toLocaleString()}</td>
+                      <td><LocalDateTime value={entry.createdAt} /></td>
                       <td>{entry.type}</td>
                       <td>{entry.materialName}</td>
                       <td>

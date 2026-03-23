@@ -1,6 +1,7 @@
 import { AppShell } from '@/app/components/app-shell';
 import { AlertsCenter } from '@/app/components/alerts-center';
 import { getDashboardData } from '@/app/actions';
+import { LocalDateTime } from '@/app/components/local-date-time';
 import { getRole } from '@/lib/role';
 
 export default async function DashboardPage({ searchParams }: { searchParams: { role?: string } }) {
@@ -57,7 +58,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: { 
           <tbody>
             {data.recentTransactions.map((entry) => (
               <tr key={entry.id}>
-                <td>{new Date(entry.createdAt).toLocaleString()}</td>
+                <td><LocalDateTime value={entry.createdAt} /></td>
                 <td>{entry.type}</td>
                 <td>{entry.materialName}</td>
                 <td>{entry.locationFrom}</td>
