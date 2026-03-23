@@ -1,5 +1,5 @@
 import { randomBytes, scryptSync } from 'crypto';
-import { JobStatus, PrismaClient } from '@prisma/client';
+import { JobStatus, PrismaClient, UserRole } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
@@ -59,10 +59,15 @@ async function main() {
 
   await prisma.adminUser.upsert({
     where: { email: 'admin@stockpilot.com' },
-    update: {},
+    update: {
+      name: 'System Administrator',
+      role: UserRole.ADMIN
+    },
     create: {
+      name: 'System Administrator',
       email: 'admin@stockpilot.com',
-      passwordHash: hashPassword('123456')
+      passwordHash: hashPassword('123456'),
+      role: UserRole.ADMIN
     }
   });
 
