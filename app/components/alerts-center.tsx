@@ -7,6 +7,7 @@ import {
   PurchaseOrderAlertRecord
 } from '@/app/actions';
 import { AlertStatusBadge } from '@/app/components/alert-status-badge';
+import { LocalDateTime } from '@/app/components/local-date-time';
 import { AppRole } from '@/lib/demo-data';
 import { canManageAlerts } from '@/lib/permissions';
 
@@ -87,12 +88,11 @@ export function AlertsCenter({
                     <div className="muted">Normalized: {alert.normalizedPoNumber}</div>
                   </td>
                   <td>{alert.jobLabel}</td>
-                  <td>{lastUpdated ? new Date(lastUpdated).toLocaleString() : '—'}</td>
+                  <td><LocalDateTime value={lastUpdated} /></td>
                   <td>
                     {alert.latestAlertMessage || 'Awaiting matching receipt.'}
                     <div className="muted">
-                      Seen: {alert.seenAt ? new Date(alert.seenAt).toLocaleString() : '—'} · Resolved:{' '}
-                      {alert.resolvedAt ? new Date(alert.resolvedAt).toLocaleString() : '—'}
+                      Seen: <LocalDateTime value={alert.seenAt} /> · Resolved: <LocalDateTime value={alert.resolvedAt} />
                     </div>
                   </td>
                   <td>
@@ -161,7 +161,7 @@ export function AlertsCenter({
                       <div className="muted">Triggered {alert.triggerCount} time(s)</div>
                       <div className="muted">Owner: {alert.ownerEmail}</div>
                     </td>
-                    <td>{new Date(alert.updatedAt).toLocaleString()}</td>
+                    <td><LocalDateTime value={alert.updatedAt} /></td>
                     <td>{alert.poNumber}</td>
                     <td>
                       {alert.materialName}
