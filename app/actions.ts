@@ -201,6 +201,8 @@ type TransactionLocationInput = {
   jobId: string | null;
 };
 
+type ReversibleTransactionType = "RECEIVE" | "TRANSFER" | "ISSUE";
+
 type ReportsFilterInput = {
   startDate?: string;
   endDate?: string;
@@ -568,6 +570,30 @@ async function adjustInventoryBalance(
       quantity: { increment: delta },
     },
   });
+}
+
+function isReversibleTransactionType(
+  transactionType: string,
+): transactionType is ReversibleTransactionType {
+  return ["RECEIVE", "TRANSFER", "ISSUE"].includes(transactionType);
+}
+
+function buildReversalNotes(originalNotes: string | null) {
+  const baseNote = originalNotes?.trim();
+  return baseNote
+    ? `REVERSAL of prior transaction. Original notes: ${baseNote}`
+    : "REVERSAL of prior transaction.";
+}
+
+async function revalidateInventoryViews() {
+  revalidatePath("/dashboard");
+  revalidatePath("/materials");
+  revalidatePath("/inventory");
+  revalidatePath("/history");
+  revalidatePath("/receive-materials");
+  revalidatePath("/transfer-materials");
+  revalidatePath("/issue-materials");
+  revalidatePath("/reports");
 }
 
 async function syncMaterialQuantitiesFromBalances() {
@@ -1425,12 +1451,7 @@ export async function receiveMaterial(formData: FormData) {
     );
   }
 
-  revalidatePath("/dashboard");
-  revalidatePath("/materials");
-  revalidatePath("/inventory");
-  revalidatePath("/history");
-  revalidatePath("/receive-materials");
-  revalidatePath("/issue-materials");
+  await revalidateInventoryViews();
   revalidatePath("/po-alerts");
   revalidatePath("/alerts");
   redirect("/receive-materials?success=1");
@@ -1566,11 +1587,7 @@ export async function transferMaterial(formData: FormData) {
     redirect("/transfer-materials?error=save-failed");
   }
 
-  revalidatePath("/dashboard");
-  revalidatePath("/materials");
-  revalidatePath("/history");
-  revalidatePath("/transfer-materials");
-  revalidatePath("/issue-materials");
+  await revalidateInventoryViews();
   redirect("/transfer-materials?success=1");
 }
 
@@ -1640,11 +1657,145 @@ export async function issueMaterial(formData: FormData) {
     redirect("/issue-materials?error=save-failed");
   }
 
-  revalidatePath("/dashboard");
-  revalidatePath("/materials");
-  revalidatePath("/history");
-  revalidatePath("/issue-materials");
+  await revalidateInventoryViews();
   redirect("/issue-materials?success=1");
+}
+
+export async function reverseInventoryTransaction(formData: FormData) {
+  try {
+    await requireRole("ADMIN");
+  } catch (error) {
+    redirect(`/history?error=reverse-failed&message=${encodeURIComponent(error instanceof Error ? error.message : "Unauthorized.")}`);
+  }
+
+  const transactionId = String(formData.get("transactionId") ?? "").trim();
+  const reversalReason = String(formData.get("reversalReason") ?? "").trim();
+
+  if (!transactionId) {
+    redirect("/history?error=reverse-failed&message=Missing%20transaction%20identifier.");
+  }
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      const transaction = await tx.inventoryTransaction.findUnique({
+        where: { id: transactionId },
+        include: {
+          reversalTransaction: { select: { id: true } },
+        },
+      });
+
+      if (!transaction) {
+        throw new Error("Transaction not found.");
+      }
+
+      if (!isReversibleTransactionType(transaction.transactionType)) {
+        throw new Error("Only RECEIVE, TRANSFER, and ISSUE transactions can be reversed.");
+      }
+
+      if (transaction.reversedTransactionId) {
+        throw new Error("Reversal transactions cannot be reversed again.");
+      }
+
+      if (transaction.reversalTransaction) {
+        throw new Error("This transaction has already been reversed.");
+      }
+
+      if (!transaction.locationToType && transaction.transactionType === "RECEIVE") {
+        throw new Error("Receive transaction is missing its destination.");
+      }
+
+      if (!transaction.locationFromType && transaction.transactionType !== "RECEIVE") {
+        throw new Error("Transaction is missing its source location.");
+      }
+
+      if (transaction.transactionType === "TRANSFER" && !transaction.locationToType) {
+        throw new Error("Transfer transaction is missing its destination.");
+      }
+
+      switch (transaction.transactionType) {
+        case "RECEIVE":
+          await adjustInventoryBalance(
+            tx,
+            transaction.materialId,
+            transaction.locationToType as InventoryLocationType,
+            transaction.locationToJobId,
+            -transaction.quantity,
+          );
+          break;
+        case "TRANSFER":
+          await adjustInventoryBalance(
+            tx,
+            transaction.materialId,
+            transaction.locationToType as InventoryLocationType,
+            transaction.locationToJobId,
+            -transaction.quantity,
+          );
+          await adjustInventoryBalance(
+            tx,
+            transaction.materialId,
+            transaction.locationFromType as InventoryLocationType,
+            transaction.locationFromJobId,
+            transaction.quantity,
+          );
+          break;
+        case "ISSUE":
+          await adjustInventoryBalance(
+            tx,
+            transaction.materialId,
+            transaction.locationFromType as InventoryLocationType,
+            transaction.locationFromJobId,
+            transaction.quantity,
+          );
+          break;
+      }
+
+      await tx.inventoryTransaction.create({
+        data: {
+          materialId: transaction.materialId,
+          transactionType: transaction.transactionType,
+          quantity: transaction.quantity,
+          locationFromType:
+            transaction.transactionType === "RECEIVE"
+              ? transaction.locationToType
+              : transaction.transactionType === "TRANSFER"
+                ? transaction.locationToType
+                : null,
+          locationFromJobId:
+            transaction.transactionType === "RECEIVE"
+              ? transaction.locationToJobId
+              : transaction.transactionType === "TRANSFER"
+                ? transaction.locationToJobId
+                : null,
+          locationToType:
+            transaction.transactionType === "RECEIVE"
+              ? null
+              : transaction.transactionType === "TRANSFER"
+                ? transaction.locationFromType
+                : transaction.locationFromType,
+          locationToJobId:
+            transaction.transactionType === "RECEIVE"
+              ? null
+              : transaction.transactionType === "TRANSFER"
+                ? transaction.locationFromJobId
+                : transaction.locationFromJobId,
+          invoiceNumber: transaction.invoiceNumber,
+          vendor: transaction.vendor,
+          notes: buildReversalNotes(transaction.notes),
+          photoUrl: transaction.photoUrl,
+          reversedTransactionId: transaction.id,
+          reversalReason: reversalReason || null,
+        },
+      });
+    });
+
+    await syncMaterialQuantitiesFromBalances();
+    await revalidateInventoryViews();
+  } catch (error) {
+    console.error("Failed to reverse inventory transaction:", error);
+    redirect(`/history?error=reverse-failed&message=${encodeURIComponent(error instanceof Error ? error.message : "Unable to reverse transaction right now.")}`);
+  }
+
+  redirect("/history?success=reversed");
 }
 
 export async function listInventoryBalances(): Promise<{

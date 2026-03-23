@@ -8,6 +8,10 @@ export type InventoryTransactionView = {
   createdAt: string;
   type: "RECEIVE" | "TRANSFER" | "ISSUE" | "ADJUSTMENT";
   materialId: string;
+  reversedTransactionId: string | null;
+  reversalReason: string;
+  isReversal: boolean;
+  isReversed: boolean;
   materialSku: string;
   materialName: string;
   quantity: number;
@@ -54,12 +58,19 @@ export function mapInventoryTransaction(entry: {
   material: { sku: string; name: string; unit: string };
   locationFromJob: { number: string; name: string } | null;
   locationToJob: { number: string; name: string } | null;
+  reversedTransactionId: string | null;
+  reversalReason: string | null;
+  reversalTransaction: { id: string } | null;
 }): InventoryTransactionView {
   return {
     id: entry.id,
     createdAt: entry.createdAt.toISOString(),
     type: entry.transactionType,
     materialId: entry.materialId,
+    reversedTransactionId: entry.reversedTransactionId,
+    reversalReason: entry.reversalReason ?? "—",
+    isReversal: Boolean(entry.reversedTransactionId),
+    isReversed: Boolean(entry.reversalTransaction),
     materialSku: entry.material.sku,
     materialName: entry.material.name,
     quantity: entry.quantity,
@@ -93,6 +104,9 @@ export async function listInventoryTransactions(
       material: true,
       locationFromJob: true,
       locationToJob: true,
+      reversalTransaction: {
+        select: { id: true },
+      },
     },
     orderBy: { createdAt: "desc" },
     ...(typeof options.take === "number" ? { take: options.take } : {}),
