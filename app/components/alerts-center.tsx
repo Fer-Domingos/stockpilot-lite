@@ -1,0 +1,166 @@
+import Link from 'next/link';
+
+import {
+  ExpectedPurchaseOrderRecord,
+  markPurchaseOrderAlertResolved,
+  markPurchaseOrderAlertSeen,
+  PurchaseOrderAlertRecord
+} from '@/app/actions';
+import { AlertStatusBadge } from '@/app/components/alert-status-badge';
+import { AppRole } from '@/lib/demo-data';
+
+export function AlertsCenter({
+  trackedPurchaseOrders,
+  triggeredAlerts,
+  role,
+  compact = false,
+  showHeaderLink = false
+}: {
+  trackedPurchaseOrders: ExpectedPurchaseOrderRecord[];
+  triggeredAlerts: PurchaseOrderAlertRecord[];
+  role: AppRole;
+  compact?: boolean;
+  showHeaderLink?: boolean;
+}) {
+  const activeAlerts = trackedPurchaseOrders.filter((alert) => alert.status !== 'RESOLVED');
+  const rows = compact ? activeAlerts.slice(0, 6) : trackedPurchaseOrders;
+
+  return (
+    <section className="card">
+      <div className="section-title">
+        <div>
+          <h3>{compact ? 'Alerts Requiring Attention' : 'Alerts / Notifications'}</h3>
+          <p className="muted">
+            Track PO alerts through Open, Triggered, Seen, and Resolved states with normalized PO matching.
+          </p>
+        </div>
+        {showHeaderLink ? (
+          <Link className="ghost-button" href={{ pathname: '/alerts', query: { role } }}>
+            Open Alerts Page
+          </Link>
+        ) : null}
+      </div>
+
+      {rows.length === 0 ? (
+        <p className="muted">No PO alerts to review.</p>
+      ) : (
+        <table>
+          <thead>
+            <tr>
+              <th>Status</th>
+              <th>PO</th>
+              <th>Related Job</th>
+              <th>Last Trigger</th>
+              <th>Latest Notification</th>
+              <th>Material</th>
+              <th>Invoice / PO</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((alert) => {
+              const canMarkSeen = alert.status === 'TRIGGERED';
+              const canResolve = alert.status === 'TRIGGERED' || alert.status === 'SEEN';
+              const lastUpdated = alert.lastTriggeredAt ?? alert.createdAt;
+
+              return (
+                <tr key={alert.id}>
+                  <td>
+                    <AlertStatusBadge status={alert.status} />
+                    <div className="muted">Triggered {alert.triggerCount} time(s)</div>
+                  </td>
+                  <td>
+                    {alert.poNumber}
+                    <div className="muted">Normalized: {alert.normalizedPoNumber}</div>
+                  </td>
+                  <td>{alert.jobLabel}</td>
+                  <td>{lastUpdated ? new Date(lastUpdated).toLocaleString() : '—'}</td>
+                  <td>
+                    {alert.latestAlertMessage || 'Awaiting matching receipt.'}
+                    <div className="muted">
+                      Seen: {alert.seenAt ? new Date(alert.seenAt).toLocaleString() : '—'} · Resolved:{' '}
+                      {alert.resolvedAt ? new Date(alert.resolvedAt).toLocaleString() : '—'}
+                    </div>
+                  </td>
+                  <td>
+                    {alert.latestAlertMaterialName}
+                    <div className="muted">{alert.latestAlertMaterialSku}</div>
+                  </td>
+                  <td>{alert.latestAlertInvoiceNumber}</td>
+                  <td>
+                    <div className="row-actions">
+                      {canMarkSeen ? (
+                        <form className="inline-form" action={markPurchaseOrderAlertSeen}>
+                          <input type="hidden" name="expectedPoId" value={alert.id} />
+                          <button className="secondary-button" type="submit">
+                            Mark Seen
+                          </button>
+                        </form>
+                      ) : null}
+                      {canResolve ? (
+                        <form className="inline-form" action={markPurchaseOrderAlertResolved}>
+                          <input type="hidden" name="expectedPoId" value={alert.id} />
+                          <button className="danger-button" type="submit">
+                            Mark Resolved
+                          </button>
+                        </form>
+                      ) : null}
+                      {!canMarkSeen && !canResolve ? <span className="muted">No action</span> : null}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+
+      {!compact && (
+        <>
+          <div className="section-title" style={{ marginTop: '1rem' }}>
+            <div>
+              <h3>Triggered Notifications</h3>
+              <p className="muted">Latest triggered notification records linked to tracked PO alerts.</p>
+            </div>
+          </div>
+          {triggeredAlerts.length === 0 ? (
+            <p className="muted">No triggered notifications yet.</p>
+          ) : (
+            <table>
+              <thead>
+                <tr>
+                  <th>Status</th>
+                  <th>Updated</th>
+                  <th>PO</th>
+                  <th>Material</th>
+                  <th>Invoice / PO</th>
+                  <th>Related Job</th>
+                  <th>Message</th>
+                </tr>
+              </thead>
+              <tbody>
+                {triggeredAlerts.map((alert) => (
+                  <tr key={alert.id}>
+                    <td>
+                      <AlertStatusBadge status={alert.status} />
+                      <div className="muted">Triggered {alert.triggerCount} time(s)</div>
+                    </td>
+                    <td>{new Date(alert.updatedAt).toLocaleString()}</td>
+                    <td>{alert.poNumber}</td>
+                    <td>
+                      {alert.materialName}
+                      <div className="muted">{alert.materialSku}</div>
+                    </td>
+                    <td>{alert.invoiceNumber}</td>
+                    <td>{alert.relatedJobLabel}</td>
+                    <td>{alert.message}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </>
+      )}
+    </section>
+  );
+}

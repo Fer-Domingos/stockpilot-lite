@@ -109,6 +109,11 @@ model ExpectedPurchaseOrder {
   poNumber           String
   normalizedPoNumber String   @unique
   note               String?
+  status             PurchaseOrderAlertStatus @default(OPEN)
+  lastTriggeredAt    DateTime?
+  seenAt             DateTime?
+  resolvedAt         DateTime?
+  triggerCount       Int      @default(0)
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
   jobId              String?
@@ -125,7 +130,12 @@ model PurchaseOrderAlert {
   expectedPoId      String
   receivingRecordId String
   message           String
+  status            PurchaseOrderAlertStatus @default(TRIGGERED)
+  seenAt            DateTime?
+  resolvedAt        DateTime?
+  triggerCount      Int      @default(1)
   createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   expectedPo      ExpectedPurchaseOrder @relation(fields: [expectedPoId], references: [id], onDelete: Cascade)
   receivingRecord ReceivingRecord       @relation(fields: [receivingRecordId], references: [id], onDelete: Cascade)
@@ -162,4 +172,11 @@ enum JobStatus {
 enum DestinationType {
   SHOP
   JOB
+}
+
+enum PurchaseOrderAlertStatus {
+  OPEN
+  TRIGGERED
+  SEEN
+  RESOLVED
 }

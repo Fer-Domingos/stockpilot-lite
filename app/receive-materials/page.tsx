@@ -52,6 +52,7 @@ export default async function ReceiveMaterialsPage({
             <thead>
               <tr>
                 <th>Alerted</th>
+                <th>Status</th>
                 <th>PO</th>
                 <th>Material</th>
                 <th>Related Job</th>
@@ -61,7 +62,8 @@ export default async function ReceiveMaterialsPage({
             <tbody>
               {poAlerts.map((alert) => (
                 <tr key={alert.id}>
-                  <td>{new Date(alert.createdAt).toLocaleString()}</td>
+                  <td>{new Date(alert.updatedAt).toLocaleString()}</td>
+                  <td>{alert.status}</td>
                   <td>{alert.poNumber}</td>
                   <td>{alert.materialName}</td>
                   <td>{alert.relatedJobLabel}</td>

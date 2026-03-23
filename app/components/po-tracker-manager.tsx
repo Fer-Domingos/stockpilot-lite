@@ -1,15 +1,14 @@
 'use client';
 
-import { createExpectedPurchaseOrder, ExpectedPurchaseOrderRecord, JobRecord, PurchaseOrderAlertRecord } from '@/app/actions';
+import { createExpectedPurchaseOrder, ExpectedPurchaseOrderRecord, JobRecord } from '@/app/actions';
+import { AlertStatusBadge } from '@/app/components/alert-status-badge';
 
 export function PoTrackerManager({
   jobs,
-  trackedPurchaseOrders,
-  alerts
+  trackedPurchaseOrders
 }: {
   jobs: JobRecord[];
   trackedPurchaseOrders: ExpectedPurchaseOrderRecord[];
-  alerts: PurchaseOrderAlertRecord[];
 }) {
   return (
     <>
@@ -42,75 +41,42 @@ export function PoTrackerManager({
 
       <section className="card">
         <div className="section-title">
-          <h3>Tracked PO Numbers</h3>
+          <h3>Tracked PO Alerts</h3>
           <p className="muted">Matching is case-insensitive and trims spaces before compare.</p>
         </div>
         <table>
           <thead>
             <tr>
+              <th>Status</th>
               <th>PO Number</th>
               <th>Related Job</th>
               <th>Note</th>
+              <th>Latest Trigger</th>
+              <th>Latest Notification</th>
               <th>Added</th>
             </tr>
           </thead>
           <tbody>
             {trackedPurchaseOrders.length === 0 ? (
               <tr>
-                <td colSpan={4} className="muted">No tracked PO numbers yet.</td>
+                <td colSpan={7} className="muted">No tracked PO numbers yet.</td>
               </tr>
             ) : (
               trackedPurchaseOrders.map((entry) => (
                 <tr key={entry.id}>
+                  <td>
+                    <AlertStatusBadge status={entry.status} />
+                    <div className="muted">Triggered {entry.triggerCount} time(s)</div>
+                  </td>
                   <td>
                     {entry.poNumber}
                     <div className="muted">Normalized: {entry.normalizedPoNumber}</div>
                   </td>
                   <td>{entry.jobLabel}</td>
                   <td>{entry.note || '—'}</td>
+                  <td>{entry.lastTriggeredAt ? new Date(entry.lastTriggeredAt).toLocaleString() : '—'}</td>
+                  <td>{entry.latestAlertMessage || 'Awaiting matching receipt.'}</td>
                   <td>{new Date(entry.createdAt).toLocaleString()}</td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </section>
-
-      <section className="card">
-        <div className="section-title">
-          <h3>PO Alerts</h3>
-          <p className="muted">Alerts appear here after a RECEIVE invoice/PO number matches a tracked PO number.</p>
-        </div>
-        <table>
-          <thead>
-            <tr>
-              <th>Alerted</th>
-              <th>PO</th>
-              <th>Material</th>
-              <th>Invoice / PO</th>
-              <th>Related Job</th>
-              <th>Note</th>
-              <th>Message</th>
-            </tr>
-          </thead>
-          <tbody>
-            {alerts.length === 0 ? (
-              <tr>
-                <td colSpan={7} className="muted">No PO alerts yet.</td>
-              </tr>
-            ) : (
-              alerts.map((alert) => (
-                <tr key={alert.id}>
-                  <td>{new Date(alert.createdAt).toLocaleString()}</td>
-                  <td>{alert.poNumber}</td>
-                  <td>
-                    {alert.materialName}
-                    <div className="muted">{alert.materialSku}</div>
-                  </td>
-                  <td>{alert.invoiceNumber}</td>
-                  <td>{alert.relatedJobLabel}</td>
-                  <td>{alert.note || '—'}</td>
-                  <td>{alert.message}</td>
                 </tr>
               ))
             )}

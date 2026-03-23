@@ -1,4 +1,5 @@
 import { AppShell } from '@/app/components/app-shell';
+import { AlertsCenter } from '@/app/components/alerts-center';
 import { getDashboardData } from '@/app/actions';
 import { getRole } from '@/lib/role';
 
@@ -27,41 +28,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: { 
         </article>
       </section>
 
-      <section className="card">
-        <div className="section-title">
-          <h3>PO Alert Notifications</h3>
-          <p className="muted">Triggered when a received invoice/PO number matches a tracked PO number.</p>
-        </div>
-        {data.poAlerts.length === 0 ? (
-          <p className="muted">No PO alerts yet.</p>
-        ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>Alerted</th>
-                <th>PO</th>
-                <th>Material</th>
-                <th>Related Job</th>
-                <th>Message</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.poAlerts.map((alert) => (
-                <tr key={alert.id}>
-                  <td>{new Date(alert.createdAt).toLocaleString()}</td>
-                  <td>{alert.poNumber}</td>
-                  <td>
-                    {alert.materialName}
-                    <div className="muted">{alert.materialSku}</div>
-                  </td>
-                  <td>{alert.relatedJobLabel}</td>
-                  <td>{alert.message}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </section>
+      <AlertsCenter trackedPurchaseOrders={data.trackedPoAlerts} triggeredAlerts={data.poAlerts} role={role} compact showHeaderLink />
 
       <section className="card">
         <div className="section-title">
