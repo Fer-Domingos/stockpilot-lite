@@ -37,6 +37,7 @@ See `prisma/schema.prisma` for full schema.
    cp .env.example .env
    ```
    `DATABASE_URL="postgresql://..."`
+   `DIRECT_URL="postgresql://..."`
 3. Generate Prisma client:
    ```bash
    npm run prisma:generate
@@ -55,10 +56,22 @@ See `prisma/schema.prisma` for full schema.
    ```
 
 ## Build for Vercel
-Required environment variable:
-- `DATABASE_URL` (PostgreSQL)
+Required environment variables:
+- `DATABASE_URL` for the app/runtime connection (PostgreSQL; pooled Neon string is fine)
+- `DIRECT_URL` for Prisma migrations/introspection (use the direct, non-pooled Neon string)
 
 Build command:
 ```bash
 npm run build
 ```
+
+Migration command (run only when this deploy includes committed Prisma migration files):
+```bash
+npm run prisma:migrate:deploy
+```
+
+Recommended Vercel setup:
+- Keep the Vercel build command as `npm run build` so regular deploys do not try to acquire Prisma migration advisory locks.
+- Set `DATABASE_URL` for runtime queries.
+- Set `DIRECT_URL` for migration commands such as `prisma migrate deploy`.
+- Only run `npm run prisma:migrate:deploy` for releases that actually include new migration files in `prisma/migrations/`.
