@@ -26,6 +26,30 @@ export type JobRecord = {
   status: JobStatus;
 };
 
+export type ExpectedPurchaseOrderRecord = {
+  id: string;
+  poNumber: string;
+  normalizedPoNumber: string;
+  jobId: string | null;
+  jobLabel: string;
+  note: string;
+  createdAt: string;
+};
+
+export type PurchaseOrderAlertRecord = {
+  id: string;
+  poNumber: string;
+  normalizedPoNumber: string;
+  relatedJobLabel: string;
+  note: string;
+  message: string;
+  receivingRecordId: string;
+  materialName: string;
+  materialSku: string;
+  invoiceNumber: string;
+  createdAt: string;
+};
+
 export type InventoryTransactionRecord = {
   id: string;
   createdAt: string;
@@ -69,6 +93,7 @@ export type DashboardView = {
   totalInventoryUnits: number;
   recentTransactions: InventoryTransactionRecord[];
   inventoryRows: InventoryAtGlanceRow[];
+  poAlerts: PurchaseOrderAlertRecord[];
 };
 
 export type ReportsInventoryRow = {
@@ -153,6 +178,24 @@ type ReportsFilterInput = {
 
 const statuses: JobStatus[] = ['OPEN', 'CLOSED'];
 const materialUnits = ['UNIT', 'SHEETS'] as const;
+
+function normalizeTrackedPoNumber(value: string): string {
+  return value.trim().toUpperCase();
+}
+
+function formatExpectedPoMutationError(error: unknown): string {
+  if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    if (error.code === 'P2002') {
+      return 'That PO number is already being tracked.';
+    }
+
+    if (error.code === 'P2021' || error.code === 'P2022') {
+      return 'PO tracking tables are missing. Run the latest Prisma migrations and try again.';
+    }
+  }
+
+  return 'Unable to save tracked PO right now.';
+}
 
 function normalizeMaterialUnit(unit: string): string {
   const normalized = unit.trim().toUpperCase();
@@ -643,6 +686,121 @@ export async function deleteJob(id: string): Promise<ActionResult> {
   }
 }
 
+export async function listExpectedPurchaseOrders(): Promise<{ data: ExpectedPurchaseOrderRecord[] }> {
+  noStore();
+
+  try {
+    const rows = await prisma.expectedPurchaseOrder.findMany({
+      include: {
+        job: {
+          select: {
+            number: true,
+            name: true
+          }
+        }
+      },
+      orderBy: [{ createdAt: 'desc' }, { poNumber: 'asc' }]
+    });
+
+    return {
+      data: rows.map((row) => ({
+        id: row.id,
+        poNumber: row.poNumber,
+        normalizedPoNumber: row.normalizedPoNumber,
+        jobId: row.jobId,
+        jobLabel: row.job ? `${row.job.number} — ${row.job.name}` : '—',
+        note: row.note ?? '',
+        createdAt: row.createdAt.toISOString()
+      }))
+    };
+  } catch (error) {
+    console.error('Failed to load tracked PO numbers:', error);
+    return { data: [] };
+  }
+}
+
+export async function createExpectedPurchaseOrder(formData: FormData) {
+  const poNumber = String(formData.get('poNumber') ?? '').trim();
+  const normalizedPoNumber = normalizeTrackedPoNumber(poNumber);
+  const jobIdValue = String(formData.get('jobId') ?? '').trim();
+  const note = String(formData.get('note') ?? '').trim();
+  const jobId = jobIdValue || null;
+
+  if (!poNumber) {
+    redirect('/po-alerts?error=missing-po-number');
+  }
+
+  if (jobId) {
+    const job = await prisma.job.findUnique({ where: { id: jobId }, select: { status: true } });
+    if (!job) {
+      redirect('/po-alerts?error=invalid-job');
+    }
+  }
+
+  try {
+    await prisma.expectedPurchaseOrder.create({
+      data: {
+        poNumber,
+        normalizedPoNumber,
+        jobId,
+        note: note || null
+      }
+    });
+  } catch (error) {
+    console.error('Failed to create tracked PO:', error);
+    redirect(`/po-alerts?error=save-failed&message=${encodeURIComponent(formatExpectedPoMutationError(error))}`);
+  }
+
+  revalidatePath('/po-alerts');
+  revalidatePath('/dashboard');
+  revalidatePath('/receive-materials');
+  redirect('/po-alerts?success=1');
+}
+
+export async function listPurchaseOrderAlerts(limit = 10): Promise<{ data: PurchaseOrderAlertRecord[] }> {
+  noStore();
+
+  try {
+    const alerts = await prisma.purchaseOrderAlert.findMany({
+      include: {
+        expectedPo: {
+          include: {
+            job: {
+              select: { number: true, name: true }
+            }
+          }
+        },
+        receivingRecord: {
+          include: {
+            material: { select: { name: true, sku: true } }
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' },
+      take: limit
+    });
+
+    return {
+      data: alerts.map((alert) => ({
+        id: alert.id,
+        poNumber: alert.expectedPo.poNumber,
+        normalizedPoNumber: alert.expectedPo.normalizedPoNumber,
+        relatedJobLabel: alert.expectedPo.job ? `${alert.expectedPo.job.number} — ${alert.expectedPo.job.name}` : '—',
+        note: alert.expectedPo.note ?? '',
+        message: alert.message,
+        receivingRecordId: alert.receivingRecordId,
+        materialName: alert.receivingRecord.material.name,
+        materialSku: alert.receivingRecord.material.sku,
+        invoiceNumber: alert.receivingRecord.invoiceNumber ?? '—',
+        createdAt: alert.createdAt.toISOString()
+      }))
+    };
+  } catch (error) {
+    console.error('Failed to load PO alerts:', error);
+    return { data: [] };
+  }
+}
+
 export async function receiveMaterial(formData: FormData) {
   const materialId = String(formData.get('materialId') ?? '');
   const destinationValue = String(formData.get('destination') ?? '').trim();
@@ -747,6 +905,34 @@ export async function receiveMaterial(formData: FormData) {
         }
       });
 
+      const matchedExpectedPo = await tx.expectedPurchaseOrder.findUnique({
+        where: {
+          normalizedPoNumber: normalizeTrackedPoNumber(invoiceNumber)
+        },
+        include: {
+          job: {
+            select: {
+              number: true,
+              name: true
+            }
+          }
+        }
+      });
+
+      if (matchedExpectedPo) {
+        const relatedJobLabel = matchedExpectedPo.job
+          ? `${matchedExpectedPo.job.number} — ${matchedExpectedPo.job.name}`
+          : 'no related job';
+
+        await tx.purchaseOrderAlert.create({
+          data: {
+            expectedPoId: matchedExpectedPo.id,
+            receivingRecordId: receipt.id,
+            message: `Tracked PO ${matchedExpectedPo.poNumber} matched receipt ${invoiceNumber} for ${normalizedQuantity} unit(s). Related job: ${relatedJobLabel}.`
+          }
+        });
+      }
+
       await adjustInventoryBalance(tx, materialId, destinationType, destinationJobId, normalizedQuantity);
 
       await tx.inventoryTransaction.create({
@@ -808,6 +994,7 @@ export async function receiveMaterial(formData: FormData) {
   revalidatePath('/history');
   revalidatePath('/receive-materials');
   revalidatePath('/issue-materials');
+  revalidatePath('/po-alerts');
   redirect('/receive-materials?success=1');
 }
 
@@ -1087,7 +1274,7 @@ export async function listInventoryTransactions(): Promise<{ data: InventoryTran
 
 export async function getDashboardData(): Promise<DashboardView> {
   try {
-    const [totalSku, openJobs, onHandAggregate, materials, balanceSums, balances, txns] = await Promise.all([
+    const [totalSku, openJobs, onHandAggregate, materials, balanceSums, balances, txns, poAlerts] = await Promise.all([
       prisma.material.count(),
       prisma.job.count({ where: { status: 'OPEN' } }),
       prisma.inventoryBalance.aggregate({ _sum: { quantity: true } }),
@@ -1108,7 +1295,8 @@ export async function getDashboardData(): Promise<DashboardView> {
         },
         orderBy: [{ material: { name: 'asc' } }, { locationType: 'asc' }, { job: { number: 'asc' } }]
       }),
-      listInventoryTransactions()
+      listInventoryTransactions(),
+      listPurchaseOrderAlerts(6)
     ]);
 
     const quantityByMaterialId = new Map(balanceSums.map((entry) => [entry.materialId, entry._sum.quantity ?? 0]));
@@ -1130,7 +1318,8 @@ export async function getDashboardData(): Promise<DashboardView> {
       openJobs,
       totalInventoryUnits: onHandAggregate._sum.quantity ?? 0,
       recentTransactions: txns.data.slice(0, 10),
-      inventoryRows
+      inventoryRows,
+      poAlerts: poAlerts.data
     };
   } catch (error) {
     console.error('Failed to load dashboard data:', error);
@@ -1140,7 +1329,8 @@ export async function getDashboardData(): Promise<DashboardView> {
       openJobs: 0,
       totalInventoryUnits: 0,
       recentTransactions: [],
-      inventoryRows: []
+      inventoryRows: [],
+      poAlerts: []
     };
   }
 }
