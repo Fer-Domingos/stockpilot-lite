@@ -6,7 +6,7 @@ import { AppRole, rolePermissions } from '@/lib/demo-data';
 
 export async function AppShell({ children, role }: { children: React.ReactNode; role: AppRole }) {
   const isEngineer = role === 'Engineer / PM';
-  const activeAlertCount = await getActiveAlertCount();
+  const activeAlertCount = await getActiveAlertCount(role);
 
   return (
     <div className="app-shell">

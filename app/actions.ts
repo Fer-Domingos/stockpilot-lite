@@ -1,11 +1,13 @@
 'use server';
 
 import { revalidatePath, unstable_noStore as noStore } from 'next/cache';
+import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 
 import { InventoryLocationType, Prisma, PurchaseOrderAlertStatus } from '@prisma/client';
 
 import { prisma } from '@/lib/prisma';
+import { authConfig, decodeSession } from '@/lib/session';
 
 export type MaterialRecord = {
   id: string;
@@ -30,6 +32,8 @@ export type AlertStatus = 'OPEN' | 'TRIGGERED' | 'SEEN' | 'RESOLVED';
 
 export type ExpectedPurchaseOrderRecord = {
   id: string;
+  ownerId: string | null;
+  ownerEmail: string;
   poNumber: string;
   normalizedPoNumber: string;
   jobId: string | null;
@@ -52,6 +56,8 @@ export type ExpectedPurchaseOrderRecord = {
 
 export type PurchaseOrderAlertRecord = {
   id: string;
+  ownerId: string | null;
+  ownerEmail: string;
   expectedPoId: string;
   poNumber: string;
   normalizedPoNumber: string;
@@ -209,17 +215,57 @@ function serializeAlertStatus(status: PurchaseOrderAlertStatus): AlertStatus {
   return status;
 }
 
-async function updateTrackedPurchaseOrderStatus(expectedPoId: string, status: AlertStatus) {
+async function getCurrentSessionUser() {
+  const sessionToken = cookies().get(authConfig.sessionCookieName)?.value;
+  const session = await decodeSession(sessionToken);
+
+  if (!session?.email) {
+    return null;
+  }
+
+  return prisma.adminUser.findUnique({
+    where: { email: session.email.toLowerCase().trim() },
+    select: { id: true, email: true }
+  });
+}
+
+async function buildAlertAccessFilter(role: 'Admin' | 'Engineer / PM') {
+  if (role === 'Admin') {
+    return {};
+  }
+
+  const currentUser = await getCurrentSessionUser();
+
+  if (!currentUser) {
+    return { ownerId: '__missing_user__' };
+  }
+
+  return { ownerId: currentUser.id };
+}
+
+async function updateTrackedPurchaseOrderStatus(
+  expectedPoId: string,
+  status: AlertStatus,
+  role: 'Admin' | 'Engineer / PM' = 'Admin'
+) {
+  const currentUser = await getCurrentSessionUser();
   const trackedPo = await prisma.expectedPurchaseOrder.findUnique({
     where: { id: expectedPoId },
     select: {
       id: true,
+      ownerId: true,
       seenAt: true
     }
   });
 
   if (!trackedPo) {
     redirect('/alerts?error=invalid-alert');
+  }
+
+  if (role === 'Engineer / PM') {
+    if (!currentUser || !trackedPo.ownerId || trackedPo.ownerId !== currentUser.id) {
+      redirect('/alerts?error=invalid-alert');
+    }
   }
 
   const now = new Date();
@@ -770,12 +816,15 @@ export async function deleteJob(id: string): Promise<ActionResult> {
 }
 
 
-export async function getActiveAlertCount(): Promise<number> {
+export async function getActiveAlertCount(role: 'Admin' | 'Engineer / PM' = 'Admin'): Promise<number> {
   noStore();
 
   try {
+    const accessFilter = await buildAlertAccessFilter(role);
+
     return await prisma.expectedPurchaseOrder.count({
       where: {
+        ...accessFilter,
         status: {
           in: ['OPEN', 'TRIGGERED']
         }
@@ -787,12 +836,20 @@ export async function getActiveAlertCount(): Promise<number> {
   }
 }
 
-export async function listExpectedPurchaseOrders(): Promise<{ data: ExpectedPurchaseOrderRecord[] }> {
+export async function listExpectedPurchaseOrders(role: 'Admin' | 'Engineer / PM' = 'Admin'): Promise<{ data: ExpectedPurchaseOrderRecord[] }> {
   noStore();
 
   try {
+    const accessFilter = await buildAlertAccessFilter(role);
+
     const rows = await prisma.expectedPurchaseOrder.findMany({
+      where: accessFilter,
       include: {
+        owner: {
+          select: {
+            email: true
+          }
+        },
         job: {
           select: {
             number: true,
@@ -822,6 +879,8 @@ export async function listExpectedPurchaseOrders(): Promise<{ data: ExpectedPurc
     return {
       data: rows.map((row) => ({
         id: row.id,
+        ownerId: row.ownerId,
+        ownerEmail: row.owner?.email ?? 'Unassigned',
         poNumber: row.poNumber,
         normalizedPoNumber: row.normalizedPoNumber,
         jobId: row.jobId,
@@ -867,12 +926,15 @@ export async function createExpectedPurchaseOrder(formData: FormData) {
   }
 
   try {
+    const currentUser = await getCurrentSessionUser();
+
     await prisma.expectedPurchaseOrder.create({
       data: {
         poNumber,
         normalizedPoNumber,
         jobId,
-        note: note || null
+        note: note || null,
+        ownerId: currentUser?.id ?? null
       }
     });
   } catch (error) {
@@ -889,34 +951,51 @@ export async function createExpectedPurchaseOrder(formData: FormData) {
 
 export async function markPurchaseOrderAlertSeen(formData: FormData) {
   const expectedPoId = String(formData.get('expectedPoId') ?? '').trim();
+  const role = formData.get('role') === 'Engineer / PM' ? 'Engineer / PM' : 'Admin';
 
   if (!expectedPoId) {
     redirect('/alerts?error=invalid-alert');
   }
 
-  await updateTrackedPurchaseOrderStatus(expectedPoId, 'SEEN');
-  redirect('/alerts?success=seen');
+  await updateTrackedPurchaseOrderStatus(expectedPoId, 'SEEN', role);
+
+  redirect(`/alerts?role=${encodeURIComponent(role)}&success=seen`);
 }
 
 export async function markPurchaseOrderAlertResolved(formData: FormData) {
   const expectedPoId = String(formData.get('expectedPoId') ?? '').trim();
+  const role = formData.get('role') === 'Engineer / PM' ? 'Engineer / PM' : 'Admin';
 
   if (!expectedPoId) {
     redirect('/alerts?error=invalid-alert');
   }
 
-  await updateTrackedPurchaseOrderStatus(expectedPoId, 'RESOLVED');
-  redirect('/alerts?success=resolved');
+  await updateTrackedPurchaseOrderStatus(expectedPoId, 'RESOLVED', role);
+
+  redirect(`/alerts?role=${encodeURIComponent(role)}&success=resolved`);
 }
 
-export async function listPurchaseOrderAlerts(limit = 10): Promise<{ data: PurchaseOrderAlertRecord[] }> {
+export async function listPurchaseOrderAlerts(limit = 10, role: 'Admin' | 'Engineer / PM' = 'Admin'): Promise<{ data: PurchaseOrderAlertRecord[] }> {
   noStore();
 
   try {
+    const accessFilter = await buildAlertAccessFilter(role);
+
     const alerts = await prisma.purchaseOrderAlert.findMany({
+      where: {
+        expectedPo: accessFilter
+      },
       include: {
+        owner: {
+          select: {
+            email: true
+          }
+        },
         expectedPo: {
           include: {
+            owner: {
+              select: { email: true }
+            },
             job: {
               select: { number: true, name: true }
             }
@@ -935,6 +1014,8 @@ export async function listPurchaseOrderAlerts(limit = 10): Promise<{ data: Purch
     return {
       data: alerts.map((alert) => ({
         id: alert.id,
+        ownerId: alert.ownerId ?? alert.expectedPo.ownerId,
+        ownerEmail: alert.owner?.email ?? alert.expectedPo.owner?.email ?? 'Unassigned',
         expectedPoId: alert.expectedPoId,
         poNumber: alert.expectedPo.poNumber,
         normalizedPoNumber: alert.expectedPo.normalizedPoNumber,
@@ -1097,6 +1178,7 @@ export async function receiveMaterial(formData: FormData) {
             where: { id: openNotification.id },
             data: {
               receivingRecordId: receipt.id,
+              ownerId: matchedExpectedPo.ownerId,
               message,
               status: 'TRIGGERED',
               seenAt: null,
@@ -1111,6 +1193,7 @@ export async function receiveMaterial(formData: FormData) {
             data: {
               expectedPoId: matchedExpectedPo.id,
               receivingRecordId: receipt.id,
+              ownerId: matchedExpectedPo.ownerId,
               message,
               status: 'TRIGGERED',
               triggerCount: 1
@@ -1472,7 +1555,7 @@ export async function listInventoryTransactions(): Promise<{ data: InventoryTran
   }
 }
 
-export async function getDashboardData(): Promise<DashboardView> {
+export async function getDashboardData(role: 'Admin' | 'Engineer / PM' = 'Admin'): Promise<DashboardView> {
   try {
     const [totalSku, openJobs, onHandAggregate, materials, balanceSums, balances, txns, trackedPoAlerts, poAlerts, activeAlertCount] = await Promise.all([
       prisma.material.count(),
@@ -1496,9 +1579,9 @@ export async function getDashboardData(): Promise<DashboardView> {
         orderBy: [{ material: { name: 'asc' } }, { locationType: 'asc' }, { job: { number: 'asc' } }]
       }),
       listInventoryTransactions(),
-      listExpectedPurchaseOrders(),
-      listPurchaseOrderAlerts(6),
-      getActiveAlertCount()
+      listExpectedPurchaseOrders(role),
+      listPurchaseOrderAlerts(6, role),
+      getActiveAlertCount(role)
     ]);
 
     const quantityByMaterialId = new Map(balanceSums.map((entry) => [entry.materialId, entry._sum.quantity ?? 0]));

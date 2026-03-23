@@ -78,6 +78,7 @@ export function AlertsCenter({
                   <td>
                     <AlertStatusBadge status={alert.status} />
                     <div className="muted">Triggered {alert.triggerCount} time(s)</div>
+                    <div className="muted">Owner: {alert.ownerEmail}</div>
                   </td>
                   <td>
                     {alert.poNumber}
@@ -102,6 +103,7 @@ export function AlertsCenter({
                       {canMarkSeen ? (
                         <form className="inline-form" action={markPurchaseOrderAlertSeen}>
                           <input type="hidden" name="expectedPoId" value={alert.id} />
+                          <input type="hidden" name="role" value={role} />
                           <button className="secondary-button" type="submit">
                             Mark as Seen
                           </button>
@@ -110,6 +112,7 @@ export function AlertsCenter({
                       {canResolve ? (
                         <form className="inline-form" action={markPurchaseOrderAlertResolved}>
                           <input type="hidden" name="expectedPoId" value={alert.id} />
+                          <input type="hidden" name="role" value={role} />
                           <button className="danger-button" type="submit">
                             Resolve
                           </button>
@@ -154,6 +157,7 @@ export function AlertsCenter({
                     <td>
                       <AlertStatusBadge status={alert.status} />
                       <div className="muted">Triggered {alert.triggerCount} time(s)</div>
+                      <div className="muted">Owner: {alert.ownerEmail}</div>
                     </td>
                     <td>{new Date(alert.updatedAt).toLocaleString()}</td>
                     <td>{alert.poNumber}</td>
