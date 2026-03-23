@@ -3,7 +3,7 @@
 import { revalidatePath, unstable_noStore as noStore } from 'next/cache';
 import { redirect } from 'next/navigation';
 
-import { InventoryLocationType, Prisma } from '@prisma/client';
+import { InventoryLocationType, Prisma, PurchaseOrderAlertStatus } from '@prisma/client';
 
 import { prisma } from '@/lib/prisma';
 
@@ -26,6 +26,8 @@ export type JobRecord = {
   status: JobStatus;
 };
 
+export type AlertStatus = 'OPEN' | 'TRIGGERED' | 'SEEN' | 'RESOLVED';
+
 export type ExpectedPurchaseOrderRecord = {
   id: string;
   poNumber: string;
@@ -33,21 +35,39 @@ export type ExpectedPurchaseOrderRecord = {
   jobId: string | null;
   jobLabel: string;
   note: string;
+  status: AlertStatus;
   createdAt: string;
+  updatedAt: string;
+  lastTriggeredAt: string | null;
+  seenAt: string | null;
+  resolvedAt: string | null;
+  triggerCount: number;
+  latestAlertId: string | null;
+  latestAlertMessage: string;
+  latestAlertReceiptId: string | null;
+  latestAlertInvoiceNumber: string;
+  latestAlertMaterialName: string;
+  latestAlertMaterialSku: string;
 };
 
 export type PurchaseOrderAlertRecord = {
   id: string;
+  expectedPoId: string;
   poNumber: string;
   normalizedPoNumber: string;
   relatedJobLabel: string;
   note: string;
+  status: AlertStatus;
   message: string;
   receivingRecordId: string;
   materialName: string;
   materialSku: string;
   invoiceNumber: string;
   createdAt: string;
+  updatedAt: string;
+  seenAt: string | null;
+  resolvedAt: string | null;
+  triggerCount: number;
 };
 
 export type InventoryTransactionRecord = {
@@ -93,6 +113,7 @@ export type DashboardView = {
   totalInventoryUnits: number;
   recentTransactions: InventoryTransactionRecord[];
   inventoryRows: InventoryAtGlanceRow[];
+  trackedPoAlerts: ExpectedPurchaseOrderRecord[];
   poAlerts: PurchaseOrderAlertRecord[];
 };
 
@@ -181,6 +202,67 @@ const materialUnits = ['UNIT', 'SHEETS'] as const;
 
 function normalizeTrackedPoNumber(value: string): string {
   return value.trim().toUpperCase();
+}
+
+function serializeAlertStatus(status: PurchaseOrderAlertStatus): AlertStatus {
+  return status;
+}
+
+async function updateTrackedPurchaseOrderStatus(expectedPoId: string, status: AlertStatus) {
+  const trackedPo = await prisma.expectedPurchaseOrder.findUnique({
+    where: { id: expectedPoId },
+    select: {
+      id: true,
+      seenAt: true
+    }
+  });
+
+  if (!trackedPo) {
+    redirect('/alerts?error=invalid-alert');
+  }
+
+  const now = new Date();
+  const data: Prisma.ExpectedPurchaseOrderUpdateInput = { status };
+
+  if (status === 'SEEN') {
+    data.seenAt = trackedPo.seenAt ?? now;
+    data.resolvedAt = null;
+  }
+
+  if (status === 'RESOLVED') {
+    data.seenAt = trackedPo.seenAt ?? now;
+    data.resolvedAt = now;
+  }
+
+  if (status === 'TRIGGERED') {
+    data.resolvedAt = null;
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.expectedPurchaseOrder.update({
+      where: { id: expectedPoId },
+      data
+    });
+
+    await tx.purchaseOrderAlert.updateMany({
+      where: {
+        expectedPoId,
+        status: {
+          not: 'RESOLVED'
+        }
+      },
+      data: {
+        status,
+        seenAt: status === 'SEEN' || status === 'RESOLVED' ? trackedPo.seenAt ?? now : null,
+        resolvedAt: status === 'RESOLVED' ? now : null
+      }
+    });
+  });
+
+  revalidatePath('/alerts');
+  revalidatePath('/dashboard');
+  revalidatePath('/po-alerts');
+  revalidatePath('/receive-materials');
 }
 
 function formatExpectedPoMutationError(error: unknown): string {
@@ -697,6 +779,22 @@ export async function listExpectedPurchaseOrders(): Promise<{ data: ExpectedPurc
             number: true,
             name: true
           }
+        },
+        alerts: {
+          include: {
+            receivingRecord: {
+              include: {
+                material: {
+                  select: {
+                    name: true,
+                    sku: true
+                  }
+                }
+              }
+            }
+          },
+          orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
+          take: 1
         }
       },
       orderBy: [{ createdAt: 'desc' }, { poNumber: 'asc' }]
@@ -710,7 +808,19 @@ export async function listExpectedPurchaseOrders(): Promise<{ data: ExpectedPurc
         jobId: row.jobId,
         jobLabel: row.job ? `${row.job.number} — ${row.job.name}` : '—',
         note: row.note ?? '',
-        createdAt: row.createdAt.toISOString()
+        status: serializeAlertStatus(row.status),
+        createdAt: row.createdAt.toISOString(),
+        updatedAt: row.updatedAt.toISOString(),
+        lastTriggeredAt: row.lastTriggeredAt?.toISOString() ?? null,
+        seenAt: row.seenAt?.toISOString() ?? null,
+        resolvedAt: row.resolvedAt?.toISOString() ?? null,
+        triggerCount: row.triggerCount,
+        latestAlertId: row.alerts[0]?.id ?? null,
+        latestAlertMessage: row.alerts[0]?.message ?? '',
+        latestAlertReceiptId: row.alerts[0]?.receivingRecordId ?? null,
+        latestAlertInvoiceNumber: row.alerts[0]?.receivingRecord.invoiceNumber ?? '—',
+        latestAlertMaterialName: row.alerts[0]?.receivingRecord.material.name ?? '—',
+        latestAlertMaterialSku: row.alerts[0]?.receivingRecord.material.sku ?? '—'
       }))
     };
   } catch (error) {
@@ -752,9 +862,32 @@ export async function createExpectedPurchaseOrder(formData: FormData) {
   }
 
   revalidatePath('/po-alerts');
+  revalidatePath('/alerts');
   revalidatePath('/dashboard');
   revalidatePath('/receive-materials');
   redirect('/po-alerts?success=1');
+}
+
+export async function markPurchaseOrderAlertSeen(formData: FormData) {
+  const expectedPoId = String(formData.get('expectedPoId') ?? '').trim();
+
+  if (!expectedPoId) {
+    redirect('/alerts?error=invalid-alert');
+  }
+
+  await updateTrackedPurchaseOrderStatus(expectedPoId, 'SEEN');
+  redirect('/alerts?success=seen');
+}
+
+export async function markPurchaseOrderAlertResolved(formData: FormData) {
+  const expectedPoId = String(formData.get('expectedPoId') ?? '').trim();
+
+  if (!expectedPoId) {
+    redirect('/alerts?error=invalid-alert');
+  }
+
+  await updateTrackedPurchaseOrderStatus(expectedPoId, 'RESOLVED');
+  redirect('/alerts?success=resolved');
 }
 
 export async function listPurchaseOrderAlerts(limit = 10): Promise<{ data: PurchaseOrderAlertRecord[] }> {
@@ -776,23 +909,29 @@ export async function listPurchaseOrderAlerts(limit = 10): Promise<{ data: Purch
           }
         }
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
       take: limit
     });
 
     return {
       data: alerts.map((alert) => ({
         id: alert.id,
+        expectedPoId: alert.expectedPoId,
         poNumber: alert.expectedPo.poNumber,
         normalizedPoNumber: alert.expectedPo.normalizedPoNumber,
         relatedJobLabel: alert.expectedPo.job ? `${alert.expectedPo.job.number} — ${alert.expectedPo.job.name}` : '—',
         note: alert.expectedPo.note ?? '',
+        status: serializeAlertStatus(alert.status),
         message: alert.message,
         receivingRecordId: alert.receivingRecordId,
         materialName: alert.receivingRecord.material.name,
         materialSku: alert.receivingRecord.material.sku,
         invoiceNumber: alert.receivingRecord.invoiceNumber ?? '—',
-        createdAt: alert.createdAt.toISOString()
+        createdAt: alert.createdAt.toISOString(),
+        updatedAt: alert.updatedAt.toISOString(),
+        seenAt: alert.seenAt?.toISOString() ?? null,
+        resolvedAt: alert.resolvedAt?.toISOString() ?? null,
+        triggerCount: alert.triggerCount
       }))
     };
   } catch (error) {
@@ -923,12 +1062,53 @@ export async function receiveMaterial(formData: FormData) {
         const relatedJobLabel = matchedExpectedPo.job
           ? `${matchedExpectedPo.job.number} — ${matchedExpectedPo.job.name}`
           : 'no related job';
-
-        await tx.purchaseOrderAlert.create({
-          data: {
+        const message = `Tracked PO ${matchedExpectedPo.poNumber} matched receipt ${invoiceNumber} for ${normalizedQuantity} unit(s). Related job: ${relatedJobLabel}.`;
+        const openNotification = await tx.purchaseOrderAlert.findFirst({
+          where: {
             expectedPoId: matchedExpectedPo.id,
-            receivingRecordId: receipt.id,
-            message: `Tracked PO ${matchedExpectedPo.poNumber} matched receipt ${invoiceNumber} for ${normalizedQuantity} unit(s). Related job: ${relatedJobLabel}.`
+            status: {
+              not: 'RESOLVED'
+            }
+          },
+          orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }]
+        });
+
+        if (openNotification) {
+          await tx.purchaseOrderAlert.update({
+            where: { id: openNotification.id },
+            data: {
+              receivingRecordId: receipt.id,
+              message,
+              status: 'TRIGGERED',
+              seenAt: null,
+              resolvedAt: null,
+              triggerCount: {
+                increment: 1
+              }
+            }
+          });
+        } else {
+          await tx.purchaseOrderAlert.create({
+            data: {
+              expectedPoId: matchedExpectedPo.id,
+              receivingRecordId: receipt.id,
+              message,
+              status: 'TRIGGERED',
+              triggerCount: 1
+            }
+          });
+        }
+
+        await tx.expectedPurchaseOrder.update({
+          where: { id: matchedExpectedPo.id },
+          data: {
+            status: 'TRIGGERED',
+            lastTriggeredAt: receivedAt,
+            seenAt: null,
+            resolvedAt: null,
+            triggerCount: {
+              increment: 1
+            }
           }
         });
       }
@@ -995,6 +1175,7 @@ export async function receiveMaterial(formData: FormData) {
   revalidatePath('/receive-materials');
   revalidatePath('/issue-materials');
   revalidatePath('/po-alerts');
+  revalidatePath('/alerts');
   redirect('/receive-materials?success=1');
 }
 
@@ -1274,7 +1455,7 @@ export async function listInventoryTransactions(): Promise<{ data: InventoryTran
 
 export async function getDashboardData(): Promise<DashboardView> {
   try {
-    const [totalSku, openJobs, onHandAggregate, materials, balanceSums, balances, txns, poAlerts] = await Promise.all([
+    const [totalSku, openJobs, onHandAggregate, materials, balanceSums, balances, txns, trackedPoAlerts, poAlerts] = await Promise.all([
       prisma.material.count(),
       prisma.job.count({ where: { status: 'OPEN' } }),
       prisma.inventoryBalance.aggregate({ _sum: { quantity: true } }),
@@ -1296,6 +1477,7 @@ export async function getDashboardData(): Promise<DashboardView> {
         orderBy: [{ material: { name: 'asc' } }, { locationType: 'asc' }, { job: { number: 'asc' } }]
       }),
       listInventoryTransactions(),
+      listExpectedPurchaseOrders(),
       listPurchaseOrderAlerts(6)
     ]);
 
@@ -1319,6 +1501,7 @@ export async function getDashboardData(): Promise<DashboardView> {
       totalInventoryUnits: onHandAggregate._sum.quantity ?? 0,
       recentTransactions: txns.data.slice(0, 10),
       inventoryRows,
+      trackedPoAlerts: trackedPoAlerts.data,
       poAlerts: poAlerts.data
     };
   } catch (error) {
@@ -1330,6 +1513,7 @@ export async function getDashboardData(): Promise<DashboardView> {
       totalInventoryUnits: 0,
       recentTransactions: [],
       inventoryRows: [],
+      trackedPoAlerts: [],
       poAlerts: []
     };
   }

@@ -1,4 +1,5 @@
 import { AppShell } from '@/app/components/app-shell';
+import { AlertsCenter } from '@/app/components/alerts-center';
 import { PoTrackerManager } from '@/app/components/po-tracker-manager';
 import { listExpectedPurchaseOrders, listJobs, listPurchaseOrderAlerts } from '@/app/actions';
 import { getRole } from '@/lib/role';
@@ -30,7 +31,8 @@ export default async function PurchaseOrderAlertsPage({
     <AppShell role={role}>
       {errorMessage ? <p style={{ color: '#b42318', marginBottom: '0.75rem' }}>{errorMessage}</p> : null}
       {showSuccess ? <p style={{ color: '#027a48', marginBottom: '0.75rem' }}>Tracked PO saved successfully.</p> : null}
-      <PoTrackerManager jobs={openJobs} trackedPurchaseOrders={trackedPurchaseOrders} alerts={alerts} />
+      <PoTrackerManager jobs={openJobs} trackedPurchaseOrders={trackedPurchaseOrders} />
+      <AlertsCenter trackedPurchaseOrders={trackedPurchaseOrders} triggeredAlerts={alerts} role={role} compact showHeaderLink />
     </AppShell>
   );
 }

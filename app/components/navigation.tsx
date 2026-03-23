@@ -12,6 +12,7 @@ const links = [
   { href: '/transfer-materials', label: 'Transfer Materials' },
   { href: '/issue-materials', label: 'Issue Materials' },
   { href: '/po-alerts', label: 'PO Alerts' },
+  { href: '/alerts', label: 'Alerts' },
   { href: '/history', label: 'History' },
   { href: '/reports', label: 'Reports' }
 ] as const;
