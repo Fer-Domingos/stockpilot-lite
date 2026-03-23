@@ -1,6 +1,7 @@
 import { AppShell } from '@/app/components/app-shell';
 import { ReceiveMaterialForm } from '@/app/components/receive-material-form';
 import { listJobs, listMaterials, listPurchaseOrderAlerts, listReceivingRecords } from '@/app/actions';
+import { canManageInventory } from '@/lib/permissions';
 import { getRole } from '@/lib/role';
 
 const errorMessages: Record<string, string> = {
@@ -16,14 +17,15 @@ export default async function ReceiveMaterialsPage({
 }: {
   searchParams: { role?: string; error?: string; message?: string; success?: string };
 }) {
-  const role = getRole(searchParams.role);
+  const role = await getRole(searchParams.role);
   const [{ data: materials }, { data: jobs }, { data: receipts }, { data: poAlerts }] = await Promise.all([
     listMaterials(),
     listJobs(),
     listReceivingRecords(),
-    listPurchaseOrderAlerts(5)
+    listPurchaseOrderAlerts(5, role)
   ]);
   const openJobs = jobs.filter((job) => job.status === 'OPEN');
+  const canPostReceipts = canManageInventory(role);
   const detailedMessage = searchParams.message ? decodeURIComponent(searchParams.message) : null;
   const errorMessage = detailedMessage || (searchParams.error ? errorMessages[searchParams.error] ?? 'Unable to receive material.' : null);
   const showSuccess = searchParams.success === '1';
@@ -37,7 +39,11 @@ export default async function ReceiveMaterialsPage({
         </div>
         {errorMessage ? <p style={{ color: '#b42318', marginBottom: '0.75rem' }}>{errorMessage}</p> : null}
         {showSuccess ? <p style={{ color: '#027a48', marginBottom: '0.75rem' }}>Receipt posted successfully.</p> : null}
-        <ReceiveMaterialForm materials={materials} jobs={openJobs} />
+        {canPostReceipts ? (
+          <ReceiveMaterialForm materials={materials} jobs={openJobs} />
+        ) : (
+          <p className="muted">PM access is read-only. Receiving is available to ADMIN users only.</p>
+        )}
       </section>
 
       <section className="card">

@@ -1,26 +1,37 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname, useSearchParams } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 
-const links: Array<{ href: string; label: string; hasCounter?: boolean }> = [
-  { href: '/dashboard', label: 'Dashboard' },
-  { href: '/materials', label: 'Materials' },
-  { href: '/inventory', label: 'Inventory' },
-  { href: '/jobs', label: 'Jobs' },
-  { href: '/receive-materials', label: 'Receive Materials' },
-  { href: '/transfer-materials', label: 'Transfer Materials' },
-  { href: '/issue-materials', label: 'Issue Materials' },
-  { href: '/po-alerts', label: 'PO Alerts' },
-  { href: '/alerts', label: 'Alerts', hasCounter: true },
-  { href: '/history', label: 'History' },
-  { href: '/reports', label: 'Reports' }
-] as const;
+import { AppRole } from '@/lib/demo-data';
 
-export function Navigation({ activeAlertCount = 0 }: { activeAlertCount?: number }) {
+const linksByRole: Record<AppRole, Array<{ href: string; label: string; hasCounter?: boolean }>> = {
+  ADMIN: [
+    { href: '/dashboard', label: 'Dashboard' },
+    { href: '/materials', label: 'Materials' },
+    { href: '/inventory', label: 'Inventory' },
+    { href: '/jobs', label: 'Jobs' },
+    { href: '/receive-materials', label: 'Receive Materials' },
+    { href: '/transfer-materials', label: 'Transfer Materials' },
+    { href: '/issue-materials', label: 'Issue Materials' },
+    { href: '/po-alerts', label: 'PO Alerts' },
+    { href: '/alerts', label: 'Alerts', hasCounter: true },
+    { href: '/history', label: 'History' },
+    { href: '/reports', label: 'Reports' }
+  ],
+  PM: [
+    { href: '/dashboard', label: 'Dashboard' },
+    { href: '/inventory', label: 'Inventory' },
+    { href: '/po-alerts', label: 'PO Alerts' },
+    { href: '/alerts', label: 'Alerts', hasCounter: true },
+    { href: '/history', label: 'History' },
+    { href: '/reports', label: 'Reports' }
+  ]
+} as const;
+
+export function Navigation({ activeAlertCount = 0, role }: { activeAlertCount?: number; role: AppRole }) {
   const pathname = usePathname();
-  const params = useSearchParams();
-  const role = params.get('role') ?? 'Admin';
+  const links = linksByRole[role];
 
   return (
     <aside className="sidebar">
@@ -35,7 +46,7 @@ export function Navigation({ activeAlertCount = 0 }: { activeAlertCount?: number
             <Link
               className={active ? 'active' : ''}
               key={link.href}
-              href={{ pathname: link.href, query: { role } }}
+              href={link.href}
             >
               <span>{link.label}</span>
               {link.hasCounter ? <span className="sidebar-counter">{activeAlertCount}</span> : null}

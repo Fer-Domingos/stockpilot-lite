@@ -1,16 +1,15 @@
-import Link from 'next/link';
 import { Navigation } from '@/app/components/navigation';
 import { getActiveAlertCount } from '@/app/actions';
 import { logoutAction } from '@/app/logout/actions';
 import { AppRole, rolePermissions } from '@/lib/demo-data';
 
 export async function AppShell({ children, role }: { children: React.ReactNode; role: AppRole }) {
-  const isEngineer = role === 'Engineer / PM';
+  const isPm = role === 'PM';
   const activeAlertCount = await getActiveAlertCount(role);
 
   return (
     <div className="app-shell">
-      <Navigation activeAlertCount={activeAlertCount} />
+      <Navigation activeAlertCount={activeAlertCount} role={role} />
       <section className="content-shell">
         <header className="top-header card">
           <div>
@@ -18,13 +17,7 @@ export async function AppShell({ children, role }: { children: React.ReactNode; 
             <h1>StockPilot Lite</h1>
           </div>
           <div className="header-actions">
-            <span className={`role-pill ${isEngineer ? 'engineer' : 'admin'}`}>{role}</span>
-            <Link
-              className="ghost-button"
-              href={{ pathname: '/dashboard', query: { role: isEngineer ? 'Admin' : 'Engineer / PM' } }}
-            >
-              Switch to {isEngineer ? 'Admin' : 'Engineer / PM'}
-            </Link>
+            <span className={`role-pill ${isPm ? 'engineer' : 'admin'}`}>{role}</span>
             <form className="logout-form" action={logoutAction}>
               <button className="logout-button" type="submit" aria-label="Log out and return to login">
                 Logout

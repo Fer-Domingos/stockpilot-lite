@@ -6,7 +6,7 @@ import { getRole } from '@/lib/role';
 export const dynamic = 'force-dynamic';
 
 export default async function InventoryPage({ searchParams }: { searchParams: { role?: string } }) {
-  const role = getRole(searchParams.role);
+  const role = await getRole(searchParams.role);
   const { data: inventoryBalances } = await listInventoryBalances();
 
   return (

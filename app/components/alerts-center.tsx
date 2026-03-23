@@ -8,6 +8,7 @@ import {
 } from '@/app/actions';
 import { AlertStatusBadge } from '@/app/components/alert-status-badge';
 import { AppRole } from '@/lib/demo-data';
+import { canManageAlerts } from '@/lib/permissions';
 
 export function AlertsCenter({
   trackedPurchaseOrders,
@@ -31,6 +32,7 @@ export function AlertsCenter({
   showTriggeredNotifications?: boolean;
 }) {
   const activeAlerts = trackedPurchaseOrders.filter((alert) => alert.status !== 'RESOLVED');
+  const canUpdateAlerts = canManageAlerts(role);
   const rows = compact ? activeAlerts.slice(0, 6) : trackedPurchaseOrders;
   const heading = title ?? (compact ? 'Alerts Requiring Attention' : 'Alerts / Notifications');
   const subheading =
@@ -69,8 +71,8 @@ export function AlertsCenter({
           </thead>
           <tbody>
             {rows.map((alert) => {
-              const canMarkSeen = alert.status === 'TRIGGERED';
-              const canResolve = alert.status === 'TRIGGERED' || alert.status === 'SEEN';
+              const canMarkSeen = canUpdateAlerts && alert.status === 'TRIGGERED';
+              const canResolve = canUpdateAlerts && (alert.status === 'TRIGGERED' || alert.status === 'SEEN');
               const lastUpdated = alert.lastTriggeredAt ?? alert.createdAt;
 
               return (

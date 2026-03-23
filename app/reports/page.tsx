@@ -39,7 +39,7 @@ function buildReportsQuery(params: ReportsSearchParams) {
 }
 
 export default async function ReportsPage({ searchParams }: { searchParams: ReportsSearchParams }) {
-  const role = getRole(searchParams.role);
+  const role = await getRole(searchParams.role);
   const { data } = await getReportsData({
     startDate: searchParams.startDate,
     endDate: searchParams.endDate,

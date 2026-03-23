@@ -1,6 +1,7 @@
 import { AppShell } from '@/app/components/app-shell';
 import { IssueMaterialForm } from '@/app/components/issue-material-form';
 import { listJobs, listMaterials } from '@/app/actions';
+import { canManageInventory } from '@/lib/permissions';
 import { getRole } from '@/lib/role';
 
 const errorMessages: Record<string, string> = {
@@ -13,10 +14,11 @@ export default async function IssueMaterialsPage({
 }: {
   searchParams: { role?: string; error?: string; success?: string };
 }) {
-  const role = getRole(searchParams.role);
+  const role = await getRole(searchParams.role);
   const [{ data: materials }, { data: jobs }] = await Promise.all([listMaterials(), listJobs()]);
   const openJobs = jobs.filter((job) => job.status === 'OPEN');
   const errorMessage = searchParams.error ? errorMessages[searchParams.error] ?? 'Unable to post issue.' : null;
+  const canIssue = canManageInventory(role);
   const showSuccess = searchParams.success === '1';
 
   return (
@@ -28,7 +30,7 @@ export default async function IssueMaterialsPage({
         </div>
         {errorMessage ? <p style={{ color: '#b42318', marginBottom: '0.75rem' }}>{errorMessage}</p> : null}
         {showSuccess ? <p style={{ color: '#027a48', marginBottom: '0.75rem' }}>Issue posted successfully.</p> : null}
-        <IssueMaterialForm materials={materials} jobs={openJobs} />
+        {canIssue ? <IssueMaterialForm materials={materials} jobs={openJobs} /> : <p className="muted">PM access is read-only. Issues are available to ADMIN users only.</p>}
       </section>
     </AppShell>
   );
