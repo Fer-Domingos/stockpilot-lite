@@ -28,7 +28,16 @@ export default async function DashboardPage({ searchParams }: { searchParams: { 
         </article>
       </section>
 
-      <AlertsCenter trackedPurchaseOrders={data.trackedPoAlerts} triggeredAlerts={data.poAlerts} role={role} compact showHeaderLink />
+      <AlertsCenter
+        trackedPurchaseOrders={data.trackedPoAlerts.filter((alert) => alert.status !== 'RESOLVED')}
+        triggeredAlerts={data.poAlerts.filter((alert) => alert.status !== 'RESOLVED')}
+        role={role}
+        compact
+        showHeaderLink
+        title="Active Alerts"
+        description="Open and triggered PO alerts that still need attention from project management."
+        emptyMessage="No open or triggered alerts to review."
+      />
 
       <section className="card">
         <div className="section-title">
