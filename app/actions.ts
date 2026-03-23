@@ -206,6 +206,7 @@ type ReportsFilterInput = {
   endDate?: string;
   jobId?: string;
   materialId?: string;
+  timeZoneOffsetMinutes?: string;
 };
 
 const statuses: JobStatus[] = ["OPEN", "CLOSED"];
@@ -490,6 +491,7 @@ function normalizeTransactionLocation(
 function parseDateFilterBoundary(
   value: string | undefined,
   boundary: "start" | "end",
+  timeZoneOffsetMinutes = 0,
 ): Date | null {
   if (!value) {
     return null;
@@ -501,14 +503,21 @@ function parseDateFilterBoundary(
     return null;
   }
 
-  const parsed = new Date(`${trimmed}T00:00:00.000Z`);
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
 
-  if (Number.isNaN(parsed.getTime())) {
+  if (!match) {
     return null;
   }
 
-  if (boundary === "end") {
-    parsed.setUTCDate(parsed.getUTCDate() + 1);
+  const [, yearValue, monthValue, dayValue] = match;
+  const year = Number(yearValue);
+  const monthIndex = Number(monthValue) - 1;
+  const day = Number(dayValue) + (boundary === "end" ? 1 : 0);
+  const utcTimestamp = Date.UTC(year, monthIndex, day, 0, 0, 0, 0);
+  const parsed = new Date(utcTimestamp + timeZoneOffsetMinutes * 60 * 1000);
+
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
   }
 
   return parsed;
@@ -1839,13 +1848,23 @@ export async function getReportsData(
   const normalizedEndDate = filters.endDate?.trim() || null;
   const normalizedJobId = filters.jobId?.trim() || null;
   const normalizedMaterialId = filters.materialId?.trim() || null;
+  const normalizedTimeZoneOffsetMinutes =
+    filters.timeZoneOffsetMinutes?.trim() || null;
+  const parsedTimeZoneOffsetMinutes = normalizedTimeZoneOffsetMinutes
+    ? Number.parseInt(normalizedTimeZoneOffsetMinutes, 10)
+    : 0;
+  const timeZoneOffsetMinutes = Number.isFinite(parsedTimeZoneOffsetMinutes)
+    ? parsedTimeZoneOffsetMinutes
+    : 0;
   const startDate = parseDateFilterBoundary(
     normalizedStartDate ?? undefined,
     "start",
+    timeZoneOffsetMinutes,
   );
   const endDateExclusive = parseDateFilterBoundary(
     normalizedEndDate ?? undefined,
     "end",
+    timeZoneOffsetMinutes,
   );
 
   const createdAtFilter: Prisma.DateTimeFilter = {};

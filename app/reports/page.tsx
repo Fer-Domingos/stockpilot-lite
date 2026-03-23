@@ -1,8 +1,9 @@
-import { getReportsData } from '@/app/actions';
-import { AppShell } from '@/app/components/app-shell';
-import { getRole } from '@/lib/role';
+import { getReportsData } from "@/app/actions";
+import { AppShell } from "@/app/components/app-shell";
+import { ReportsTimezoneField } from "@/app/components/reports-timezone-field";
+import { getRole } from "@/lib/role";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
 type ReportsSearchParams = {
   role?: string;
@@ -10,11 +11,12 @@ type ReportsSearchParams = {
   endDate?: string;
   jobId?: string;
   materialId?: string;
+  timeZoneOffsetMinutes?: string;
 };
 
 function formatDate(value: string | null) {
   if (!value) {
-    return 'All time';
+    return "All time";
   }
 
   const parsed = new Date(`${value}T00:00:00Z`);
@@ -29,22 +31,29 @@ function formatDate(value: string | null) {
 function buildReportsQuery(params: ReportsSearchParams) {
   const query = new URLSearchParams();
 
-  if (params.role) query.set('role', params.role);
-  if (params.startDate) query.set('startDate', params.startDate);
-  if (params.endDate) query.set('endDate', params.endDate);
-  if (params.jobId) query.set('jobId', params.jobId);
-  if (params.materialId) query.set('materialId', params.materialId);
+  if (params.role) query.set("role", params.role);
+  if (params.startDate) query.set("startDate", params.startDate);
+  if (params.endDate) query.set("endDate", params.endDate);
+  if (params.jobId) query.set("jobId", params.jobId);
+  if (params.materialId) query.set("materialId", params.materialId);
+  if (params.timeZoneOffsetMinutes)
+    query.set("timeZoneOffsetMinutes", params.timeZoneOffsetMinutes);
 
   return query.toString();
 }
 
-export default async function ReportsPage({ searchParams }: { searchParams: ReportsSearchParams }) {
+export default async function ReportsPage({
+  searchParams,
+}: {
+  searchParams: ReportsSearchParams;
+}) {
   const role = await getRole(searchParams.role);
   const { data } = await getReportsData({
     startDate: searchParams.startDate,
     endDate: searchParams.endDate,
     jobId: searchParams.jobId,
-    materialId: searchParams.materialId
+    materialId: searchParams.materialId,
+    timeZoneOffsetMinutes: searchParams.timeZoneOffsetMinutes,
   });
 
   const activeQuery = buildReportsQuery({
@@ -52,7 +61,8 @@ export default async function ReportsPage({ searchParams }: { searchParams: Repo
     startDate: data.filters.startDate ?? undefined,
     endDate: data.filters.endDate ?? undefined,
     jobId: data.filters.jobId ?? undefined,
-    materialId: data.filters.materialId ?? undefined
+    materialId: data.filters.materialId ?? undefined,
+    timeZoneOffsetMinutes: searchParams.timeZoneOffsetMinutes,
   });
 
   return (
@@ -62,33 +72,45 @@ export default async function ReportsPage({ searchParams }: { searchParams: Repo
           <div>
             <h3>Reports</h3>
             <p className="muted">
-              Reporting window: {formatDate(data.filters.startDate)} to {formatDate(data.filters.endDate)}.
+              Reporting window: {formatDate(data.filters.startDate)} to{" "}
+              {formatDate(data.filters.endDate)}.
             </p>
             <p className="muted">
               Mode: {data.reportMetadata.mode}
               {data.reportMetadata.selectedJob
                 ? ` · Job ${data.reportMetadata.selectedJob.number} — ${data.reportMetadata.selectedJob.name}`
-                : ''}
+                : ""}
               {data.reportMetadata.selectedMaterial
                 ? ` · Material ${data.reportMetadata.selectedMaterial.sku} — ${data.reportMetadata.selectedMaterial.name}`
-                : ''}
+                : ""}
             </p>
           </div>
         </div>
 
         <form method="get" className="reports-filter-form">
           <input type="hidden" name="role" value={role} />
+          <ReportsTimezoneField
+            initialValue={searchParams.timeZoneOffsetMinutes}
+          />
           <label>
             Start date
-            <input type="date" name="startDate" defaultValue={data.filters.startDate ?? ''} />
+            <input
+              type="date"
+              name="startDate"
+              defaultValue={data.filters.startDate ?? ""}
+            />
           </label>
           <label>
             End date
-            <input type="date" name="endDate" defaultValue={data.filters.endDate ?? ''} />
+            <input
+              type="date"
+              name="endDate"
+              defaultValue={data.filters.endDate ?? ""}
+            />
           </label>
           <label>
             Job
-            <select name="jobId" defaultValue={data.filters.jobId ?? ''}>
+            <select name="jobId" defaultValue={data.filters.jobId ?? ""}>
               <option value="">All jobs</option>
               {data.filterOptions.jobs.map((job) => (
                 <option key={job.id} value={job.id}>
@@ -99,7 +121,10 @@ export default async function ReportsPage({ searchParams }: { searchParams: Repo
           </label>
           <label>
             Material
-            <select name="materialId" defaultValue={data.filters.materialId ?? ''}>
+            <select
+              name="materialId"
+              defaultValue={data.filters.materialId ?? ""}
+            >
               <option value="">All materials</option>
               {data.filterOptions.materials.map((material) => (
                 <option key={material.id} value={material.id}>
@@ -110,13 +135,22 @@ export default async function ReportsPage({ searchParams }: { searchParams: Repo
           </label>
           <div className="reports-filter-actions">
             <button type="submit">Apply filter</button>
-            <a className="ghost-button" href={`/reports/export${activeQuery ? `?${activeQuery}` : ''}`}>
+            <a
+              className="ghost-button"
+              href={`/reports/export${activeQuery ? `?${activeQuery}` : ""}`}
+            >
               Export Excel
             </a>
-            <a className="ghost-button" href={`/reports/export/pdf${activeQuery ? `?${activeQuery}` : ''}`}>
+            <a
+              className="ghost-button"
+              href={`/reports/export/pdf${activeQuery ? `?${activeQuery}` : ""}`}
+            >
               Export PDF
             </a>
-            <a className="ghost-button reports-reset-link" href={`/reports?role=${encodeURIComponent(role)}`}>
+            <a
+              className="ghost-button reports-reset-link"
+              href={`/reports?role=${encodeURIComponent(role)}`}
+            >
               Clear
             </a>
           </div>
@@ -146,7 +180,10 @@ export default async function ReportsPage({ searchParams }: { searchParams: Repo
         <div className="section-title">
           <div>
             <h3>Total Inventory by Material</h3>
-            <p className="muted">Current live balances split between shop stock and job allocations.</p>
+            <p className="muted">
+              Current live balances split between shop stock and job
+              allocations.
+            </p>
           </div>
         </div>
         <div className="table-scroll">
@@ -163,7 +200,11 @@ export default async function ReportsPage({ searchParams }: { searchParams: Repo
             <tbody>
               {data.inventorySummary.rows.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="muted" style={{ textAlign: 'center' }}>
+                  <td
+                    colSpan={5}
+                    className="muted"
+                    style={{ textAlign: "center" }}
+                  >
                     No inventory balances found.
                   </td>
                 </tr>
@@ -191,7 +232,9 @@ export default async function ReportsPage({ searchParams }: { searchParams: Repo
           <div className="section-title">
             <div>
               <h3>Most Used Materials</h3>
-              <p className="muted">Based on ISSUE transactions in the selected date range.</p>
+              <p className="muted">
+                Based on ISSUE transactions in the selected date range.
+              </p>
             </div>
           </div>
           <div className="table-scroll">
@@ -206,7 +249,11 @@ export default async function ReportsPage({ searchParams }: { searchParams: Repo
               <tbody>
                 {data.topMaterials.length === 0 ? (
                   <tr>
-                    <td colSpan={3} className="muted" style={{ textAlign: 'center' }}>
+                    <td
+                      colSpan={3}
+                      className="muted"
+                      style={{ textAlign: "center" }}
+                    >
                       No issue activity found for this date range.
                     </td>
                   </tr>
@@ -233,7 +280,10 @@ export default async function ReportsPage({ searchParams }: { searchParams: Repo
           <div className="section-title">
             <div>
               <h3>Recent Activity Summary</h3>
-              <p className="muted">Most recent inventory transactions within the selected date range.</p>
+              <p className="muted">
+                Most recent inventory transactions within the selected date
+                range.
+              </p>
             </div>
           </div>
 
@@ -271,7 +321,11 @@ export default async function ReportsPage({ searchParams }: { searchParams: Repo
               <tbody>
                 {data.recentActivity.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="muted" style={{ textAlign: 'center' }}>
+                    <td
+                      colSpan={6}
+                      className="muted"
+                      style={{ textAlign: "center" }}
+                    >
                       No recent transactions found for this date range.
                     </td>
                   </tr>

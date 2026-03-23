@@ -425,6 +425,8 @@ export async function GET(request: Request) {
     endDate: searchParams.get("endDate") ?? undefined,
     jobId: searchParams.get("jobId") ?? undefined,
     materialId: searchParams.get("materialId") ?? undefined,
+    timeZoneOffsetMinutes:
+      searchParams.get("timeZoneOffsetMinutes") ?? undefined,
   });
 
   const pdf = buildPdfBuffer(buildReportLines(data));
