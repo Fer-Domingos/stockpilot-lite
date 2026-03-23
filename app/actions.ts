@@ -1032,7 +1032,7 @@ export async function createExpectedPurchaseOrder(formData: FormData) {
 }
 
 export async function markPurchaseOrderAlertSeen(formData: FormData) {
-  await requireRole("ADMIN");
+  await requireRole("ADMIN", "PM");
 
   const expectedPoId = String(formData.get("expectedPoId") ?? "").trim();
   const role = await getCurrentRole();
@@ -1047,7 +1047,7 @@ export async function markPurchaseOrderAlertSeen(formData: FormData) {
 }
 
 export async function markPurchaseOrderAlertResolved(formData: FormData) {
-  await requireRole("ADMIN");
+  await requireRole("ADMIN", "PM");
 
   const expectedPoId = String(formData.get("expectedPoId") ?? "").trim();
   const role = await getCurrentRole();
@@ -1315,6 +1315,23 @@ export async function receiveMaterial(formData: FormData) {
             },
           });
         }
+
+        await tx.purchaseOrderAlert.updateMany({
+          where: {
+            expectedPoId: matchedExpectedPo.id,
+            OR: [
+              { ownerId: null },
+              {
+                ownerId: {
+                  not: matchedExpectedPo.ownerId,
+                },
+              },
+            ],
+          },
+          data: {
+            ownerId: matchedExpectedPo.ownerId,
+          },
+        });
 
         await tx.expectedPurchaseOrder.update({
           where: { id: matchedExpectedPo.id },

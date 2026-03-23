@@ -5,5 +5,5 @@ export function canManageInventory(role: AppRole): boolean {
 }
 
 export function canManageAlerts(role: AppRole): boolean {
-  return role === 'ADMIN';
+  return role === 'ADMIN' || role === 'PM';
 }
