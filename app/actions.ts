@@ -144,8 +144,23 @@ export type ReportsActivitySummary = {
   transferCount: number;
   issueCount: number;
   adjustmentCount: number;
+  reversalCount: number;
   receiveQuantity: number;
   issueQuantity: number;
+};
+
+export type ReversalActivityRow = {
+  id: string;
+  createdAt: string;
+  reversedAt: string | null;
+  originalTransactionId: string | null;
+  transactionType: InventoryTransactionRecord["type"];
+  materialName: string;
+  materialSku: string;
+  quantity: number;
+  unit: string;
+  reversedByEmail: string;
+  reversalReason: string;
 };
 
 export type ReportsView = {
@@ -154,6 +169,7 @@ export type ReportsView = {
     endDate: string | null;
     jobId: string | null;
     materialId: string | null;
+    reversalFilter: "exclude" | "include" | "only";
   };
   filterOptions: {
     jobs: Array<{ id: string; number: string; name: string }>;
@@ -180,6 +196,7 @@ export type ReportsView = {
   topMaterials: TopUsedMaterialRow[];
   activitySummary: ReportsActivitySummary;
   recentActivity: InventoryTransactionRecord[];
+  reversalActivity: ReversalActivityRow[];
 };
 
 type ActionResult<T = undefined> = {
@@ -209,6 +226,7 @@ type ReportsFilterInput = {
   jobId?: string;
   materialId?: string;
   timeZoneOffsetMinutes?: string;
+  reversalFilter?: "exclude" | "include" | "only";
 };
 
 const statuses: JobStatus[] = ["OPEN", "CLOSED"];
@@ -1675,6 +1693,16 @@ export async function reverseInventoryTransaction(formData: FormData) {
     redirect("/history?error=reverse-failed&message=Missing%20transaction%20identifier.");
   }
 
+  if (reversalReason.length < 10) {
+    redirect("/history?error=reverse-failed&message=Reversal%20reason%20must%20be%20at%20least%2010%20characters.");
+  }
+
+  const currentUser = await getCurrentSessionUser();
+
+  if (!currentUser) {
+    redirect("/history?error=reverse-failed&message=Unable%20to%20identify%20the%20admin%20performing%20this%20reversal.");
+  }
+
   try {
     await prisma.$transaction(async (tx) => {
       const transaction = await tx.inventoryTransaction.findUnique({
@@ -1783,7 +1811,9 @@ export async function reverseInventoryTransaction(formData: FormData) {
           notes: buildReversalNotes(transaction.notes),
           photoUrl: transaction.photoUrl,
           reversedTransactionId: transaction.id,
-          reversalReason: reversalReason || null,
+          reversalReason,
+          reversedByUserId: currentUser.id,
+          reversedAt: new Date(),
         },
       });
     });
@@ -2001,6 +2031,11 @@ export async function getReportsData(
   const normalizedMaterialId = filters.materialId?.trim() || null;
   const normalizedTimeZoneOffsetMinutes =
     filters.timeZoneOffsetMinutes?.trim() || null;
+  const reversalFilter = filters.reversalFilter === "only"
+    ? "only"
+    : filters.reversalFilter === "include"
+      ? "include"
+      : "exclude";
   const parsedTimeZoneOffsetMinutes = normalizedTimeZoneOffsetMinutes
     ? Number.parseInt(normalizedTimeZoneOffsetMinutes, 10)
     : 0;
@@ -2045,6 +2080,12 @@ export async function getReportsData(
     ];
   }
 
+  if (reversalFilter === "exclude") {
+    transactionWhere.reversedTransactionId = null;
+  } else if (reversalFilter === "only") {
+    transactionWhere.reversedTransactionId = { not: null };
+  }
+
   const resolvedTransactionWhere =
     Object.keys(transactionWhere).length > 0 ? transactionWhere : undefined;
 
@@ -2056,6 +2097,7 @@ export async function getReportsData(
       transactions,
       issueGroups,
       activityCounts,
+      reversalTransactions,
     ] = await Promise.all([
       prisma.material.findMany({
         select: {
@@ -2122,6 +2164,26 @@ export async function getReportsData(
         where: resolvedTransactionWhere,
         _count: { _all: true },
         _sum: { quantity: true },
+      }),
+      prisma.inventoryTransaction.findMany({
+        where: {
+          ...(resolvedTransactionWhere ?? {}),
+          reversedTransactionId: { not: null },
+        },
+        include: {
+          material: {
+            select: {
+              sku: true,
+              name: true,
+              unit: true,
+            },
+          },
+          reversedByUser: {
+            select: { email: true },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 10,
       }),
     ]);
 
@@ -2235,6 +2297,7 @@ export async function getReportsData(
           endDate: normalizedEndDate,
           jobId: selectedJob?.id ?? null,
           materialId: selectedMaterial?.id ?? null,
+          reversalFilter,
         },
         filterOptions: {
           jobs,
@@ -2263,12 +2326,26 @@ export async function getReportsData(
           transferCount: summaryByType.get("TRANSFER")?._count._all ?? 0,
           issueCount: summaryByType.get("ISSUE")?._count._all ?? 0,
           adjustmentCount: summaryByType.get("ADJUSTMENT")?._count._all ?? 0,
+          reversalCount: reversalTransactions.length,
           receiveQuantity: summaryByType.get("RECEIVE")?._sum.quantity ?? 0,
           issueQuantity: Math.abs(
             summaryByType.get("ISSUE")?._sum.quantity ?? 0,
           ),
         },
         recentActivity,
+        reversalActivity: reversalTransactions.map((entry) => ({
+          id: entry.id,
+          createdAt: entry.createdAt.toISOString(),
+          reversedAt: entry.reversedAt?.toISOString() ?? null,
+          originalTransactionId: entry.reversedTransactionId,
+          transactionType: entry.transactionType,
+          materialName: entry.material.name,
+          materialSku: entry.material.sku,
+          quantity: entry.quantity,
+          unit: entry.material.unit,
+          reversedByEmail: entry.reversedByUser?.email ?? "—",
+          reversalReason: entry.reversalReason ?? "—",
+        })),
       },
     };
   } catch (error) {
@@ -2281,6 +2358,7 @@ export async function getReportsData(
           endDate: normalizedEndDate,
           jobId: normalizedJobId,
           materialId: normalizedMaterialId,
+          reversalFilter,
         },
         filterOptions: {
           jobs: [],
@@ -2309,10 +2387,12 @@ export async function getReportsData(
           transferCount: 0,
           issueCount: 0,
           adjustmentCount: 0,
+          reversalCount: 0,
           receiveQuantity: 0,
           issueQuantity: 0,
         },
         recentActivity: [],
+        reversalActivity: [],
       },
     };
   }

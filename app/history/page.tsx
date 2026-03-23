@@ -23,6 +23,8 @@ type HistoryRow = {
   notes?: string | null;
   reversedTransactionId?: string | null;
   reversalReason?: string | null;
+  reversedAt?: string | null;
+  reversedByEmail?: string | null;
   isReversal?: boolean;
   isReversed?: boolean;
 };
@@ -63,6 +65,8 @@ export default async function HistoryPage({ searchParams }: { searchParams: { ro
     notes: row.notes ?? '—',
     reversedTransactionId: row.reversedTransactionId ?? null,
     reversalReason: row.reversalReason ?? null,
+    reversedAt: row.reversedAt ?? null,
+    reversedByEmail: row.reversedByEmail ?? null,
     isReversal: Boolean(row.isReversal),
     isReversed: Boolean(row.isReversed)
   }));
@@ -129,6 +133,8 @@ export default async function HistoryPage({ searchParams }: { searchParams: { ro
                     <td>
                       <div>{statusLabel}</div>
                       {entry.reversalReason ? <div className="muted">Reason: {entry.reversalReason}</div> : null}
+                      {entry.reversedByEmail ? <div className="muted">By: {entry.reversedByEmail}</div> : null}
+                      {entry.reversedAt ? <div className="muted">At: <LocalDateTime value={entry.reversedAt} /></div> : null}
                     </td>
                     <td>{entry.locationFrom}</td>
                     <td>{entry.locationTo}</td>
@@ -140,11 +146,26 @@ export default async function HistoryPage({ searchParams }: { searchParams: { ro
                     <td>{entry.notes}</td>
                     <td>
                       {canReverse ? (
-                        <form action={reverseInventoryTransaction}>
-                          <input type="hidden" name="transactionId" value={entry.id} />
-                          <input type="hidden" name="reversalReason" value="Admin reversal from history" />
-                          <button type="submit">Reverse</button>
-                        </form>
+                        <details>
+                          <summary style={{ cursor: 'pointer', color: '#0f172a', fontWeight: 600 }}>Reverse</summary>
+                          <form action={reverseInventoryTransaction} style={{ marginTop: '0.75rem', display: 'grid', gap: '0.5rem', minWidth: '16rem' }}>
+                            <input type="hidden" name="transactionId" value={entry.id} />
+                            <label style={{ display: 'grid', gap: '0.35rem' }}>
+                              <span className="muted">Reversal reason</span>
+                              <textarea
+                                name="reversalReason"
+                                rows={3}
+                                minLength={10}
+                                required
+                                placeholder="Explain why this transaction is being reversed."
+                              />
+                            </label>
+                            <div className="muted" style={{ fontSize: '0.85rem' }}>
+                              Minimum 10 characters. Original transaction stays in history and a separate reversal entry will be created.
+                            </div>
+                            <button type="submit">Confirm reversal</button>
+                          </form>
+                        </details>
                       ) : (
                         <span className="muted">—</span>
                       )}

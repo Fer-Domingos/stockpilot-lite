@@ -26,6 +26,8 @@ export async function GET() {
           notes: entry.notes === "—" ? null : entry.notes,
           reversedTransactionId: entry.reversedTransactionId,
           reversalReason: entry.reversalReason === "—" ? null : entry.reversalReason,
+          reversedAt: entry.reversedAt,
+          reversedByEmail: entry.reversedByEmail === "—" ? null : entry.reversedByEmail,
           isReversal: entry.isReversal,
           isReversed: entry.isReversed,
         })),
