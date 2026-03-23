@@ -1268,20 +1268,33 @@ export async function getReportsData(filters: ReportsFilterInput = {}): Promise<
             ? 'Specific Material'
             : 'General';
 
+    const selectedJobMaterialIds = selectedJob
+      ? new Set(
+          balances
+            .filter(
+              (balance) =>
+                balance.locationType === 'JOB' &&
+                balance.jobId === selectedJob.id &&
+                (!selectedMaterial || balance.materialId === selectedMaterial.id)
+            )
+            .map((balance) => balance.materialId)
+        )
+      : null;
+
     const visibleBalances = balances.filter((balance) => {
       if (selectedMaterial && balance.materialId !== selectedMaterial.id) {
         return false;
       }
 
-      if (selectedJob && balance.locationType === 'JOB' && balance.jobId !== selectedJob.id) {
-        return false;
-      }
-
-      if (selectedJob && balance.locationType === 'JOB' && balance.jobId === selectedJob.id) {
+      if (!selectedJob) {
         return true;
       }
 
-      return balance.locationType === 'SHOP' || !selectedJob;
+      if (balance.locationType === 'JOB') {
+        return balance.jobId === selectedJob.id;
+      }
+
+      return selectedJobMaterialIds?.has(balance.materialId) ?? false;
     });
 
     const inventorySummaryByMaterial = new Map<string, ReportsInventoryRow>();
