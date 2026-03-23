@@ -115,6 +115,7 @@ export type DashboardView = {
   inventoryRows: InventoryAtGlanceRow[];
   trackedPoAlerts: ExpectedPurchaseOrderRecord[];
   poAlerts: PurchaseOrderAlertRecord[];
+  activeAlertCount: number;
 };
 
 export type ReportsInventoryRow = {
@@ -765,6 +766,24 @@ export async function deleteJob(id: string): Promise<ActionResult> {
   } catch (error) {
     console.error('Failed to delete job:', error);
     return { ok: false, error: 'Unable to delete job right now.' };
+  }
+}
+
+
+export async function getActiveAlertCount(): Promise<number> {
+  noStore();
+
+  try {
+    return await prisma.expectedPurchaseOrder.count({
+      where: {
+        status: {
+          in: ['OPEN', 'TRIGGERED']
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Failed to load active alert count:', error);
+    return 0;
   }
 }
 
@@ -1455,7 +1474,7 @@ export async function listInventoryTransactions(): Promise<{ data: InventoryTran
 
 export async function getDashboardData(): Promise<DashboardView> {
   try {
-    const [totalSku, openJobs, onHandAggregate, materials, balanceSums, balances, txns, trackedPoAlerts, poAlerts] = await Promise.all([
+    const [totalSku, openJobs, onHandAggregate, materials, balanceSums, balances, txns, trackedPoAlerts, poAlerts, activeAlertCount] = await Promise.all([
       prisma.material.count(),
       prisma.job.count({ where: { status: 'OPEN' } }),
       prisma.inventoryBalance.aggregate({ _sum: { quantity: true } }),
@@ -1478,7 +1497,8 @@ export async function getDashboardData(): Promise<DashboardView> {
       }),
       listInventoryTransactions(),
       listExpectedPurchaseOrders(),
-      listPurchaseOrderAlerts(6)
+      listPurchaseOrderAlerts(6),
+      getActiveAlertCount()
     ]);
 
     const quantityByMaterialId = new Map(balanceSums.map((entry) => [entry.materialId, entry._sum.quantity ?? 0]));
@@ -1502,7 +1522,8 @@ export async function getDashboardData(): Promise<DashboardView> {
       recentTransactions: txns.data.slice(0, 10),
       inventoryRows,
       trackedPoAlerts: trackedPoAlerts.data,
-      poAlerts: poAlerts.data
+      poAlerts: poAlerts.data,
+      activeAlertCount
     };
   } catch (error) {
     console.error('Failed to load dashboard data:', error);
@@ -1514,7 +1535,8 @@ export async function getDashboardData(): Promise<DashboardView> {
       recentTransactions: [],
       inventoryRows: [],
       trackedPoAlerts: [],
-      poAlerts: []
+      poAlerts: [],
+      activeAlertCount: 0
     };
   }
 }

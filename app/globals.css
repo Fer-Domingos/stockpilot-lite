@@ -60,12 +60,28 @@ a {
   border-radius: 10px;
   color: #cbd5e1;
   transition: all 140ms ease;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .sidebar a:hover,
 .sidebar a.active {
   background: #1e293b;
   color: #f8fafc;
+}
+
+
+.sidebar-counter {
+  min-width: 1.6rem;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #dc2626;
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-align: center;
 }
 
 .sidebar-footer {

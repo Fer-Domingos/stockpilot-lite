@@ -14,25 +14,35 @@ export function AlertsCenter({
   triggeredAlerts,
   role,
   compact = false,
-  showHeaderLink = false
+  showHeaderLink = false,
+  title,
+  description,
+  emptyMessage,
+  showTriggeredNotifications = true
 }: {
   trackedPurchaseOrders: ExpectedPurchaseOrderRecord[];
   triggeredAlerts: PurchaseOrderAlertRecord[];
   role: AppRole;
   compact?: boolean;
   showHeaderLink?: boolean;
+  title?: string;
+  description?: string;
+  emptyMessage?: string;
+  showTriggeredNotifications?: boolean;
 }) {
   const activeAlerts = trackedPurchaseOrders.filter((alert) => alert.status !== 'RESOLVED');
   const rows = compact ? activeAlerts.slice(0, 6) : trackedPurchaseOrders;
+  const heading = title ?? (compact ? 'Alerts Requiring Attention' : 'Alerts / Notifications');
+  const subheading =
+    description ??
+    'Track PO alerts through Open, Triggered, Seen, and Resolved states with normalized PO matching.';
 
   return (
     <section className="card">
       <div className="section-title">
         <div>
-          <h3>{compact ? 'Alerts Requiring Attention' : 'Alerts / Notifications'}</h3>
-          <p className="muted">
-            Track PO alerts through Open, Triggered, Seen, and Resolved states with normalized PO matching.
-          </p>
+          <h3>{heading}</h3>
+          <p className="muted">{subheading}</p>
         </div>
         {showHeaderLink ? (
           <Link className="ghost-button" href={{ pathname: '/alerts', query: { role } }}>
@@ -42,7 +52,7 @@ export function AlertsCenter({
       </div>
 
       {rows.length === 0 ? (
-        <p className="muted">No PO alerts to review.</p>
+        <p className="muted">{emptyMessage ?? 'No PO alerts to review.'}</p>
       ) : (
         <table>
           <thead>
@@ -93,7 +103,7 @@ export function AlertsCenter({
                         <form className="inline-form" action={markPurchaseOrderAlertSeen}>
                           <input type="hidden" name="expectedPoId" value={alert.id} />
                           <button className="secondary-button" type="submit">
-                            Mark Seen
+                            Mark as Seen
                           </button>
                         </form>
                       ) : null}
@@ -101,7 +111,7 @@ export function AlertsCenter({
                         <form className="inline-form" action={markPurchaseOrderAlertResolved}>
                           <input type="hidden" name="expectedPoId" value={alert.id} />
                           <button className="danger-button" type="submit">
-                            Mark Resolved
+                            Resolve
                           </button>
                         </form>
                       ) : null}
@@ -115,7 +125,7 @@ export function AlertsCenter({
         </table>
       )}
 
-      {!compact && (
+      {!compact && showTriggeredNotifications && (
         <>
           <div className="section-title" style={{ marginTop: '1rem' }}>
             <div>

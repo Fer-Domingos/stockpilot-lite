@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 
-const links = [
+const links: Array<{ href: string; label: string; hasCounter?: boolean }> = [
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/materials', label: 'Materials' },
   { href: '/inventory', label: 'Inventory' },
@@ -12,12 +12,12 @@ const links = [
   { href: '/transfer-materials', label: 'Transfer Materials' },
   { href: '/issue-materials', label: 'Issue Materials' },
   { href: '/po-alerts', label: 'PO Alerts' },
-  { href: '/alerts', label: 'Alerts' },
+  { href: '/alerts', label: 'Alerts', hasCounter: true },
   { href: '/history', label: 'History' },
   { href: '/reports', label: 'Reports' }
 ] as const;
 
-export function Navigation() {
+export function Navigation({ activeAlertCount = 0 }: { activeAlertCount?: number }) {
   const pathname = usePathname();
   const params = useSearchParams();
   const role = params.get('role') ?? 'Admin';
@@ -37,7 +37,8 @@ export function Navigation() {
               key={link.href}
               href={{ pathname: link.href, query: { role } }}
             >
-              {link.label}
+              <span>{link.label}</span>
+              {link.hasCounter ? <span className="sidebar-counter">{activeAlertCount}</span> : null}
             </Link>
           );
         })}

@@ -1,14 +1,16 @@
 import Link from 'next/link';
 import { Navigation } from '@/app/components/navigation';
+import { getActiveAlertCount } from '@/app/actions';
 import { logoutAction } from '@/app/logout/actions';
 import { AppRole, rolePermissions } from '@/lib/demo-data';
 
-export function AppShell({ children, role }: { children: React.ReactNode; role: AppRole }) {
+export async function AppShell({ children, role }: { children: React.ReactNode; role: AppRole }) {
   const isEngineer = role === 'Engineer / PM';
+  const activeAlertCount = await getActiveAlertCount();
 
   return (
     <div className="app-shell">
-      <Navigation />
+      <Navigation activeAlertCount={activeAlertCount} />
       <section className="content-shell">
         <header className="top-header card">
           <div>
