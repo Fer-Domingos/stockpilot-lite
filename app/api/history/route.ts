@@ -24,6 +24,10 @@ export async function GET() {
             entry.invoiceNumber === "—" ? null : entry.invoiceNumber,
           vendorName: entry.vendorName === "—" ? null : entry.vendorName,
           notes: entry.notes === "—" ? null : entry.notes,
+          reversedTransactionId: entry.reversedTransactionId,
+          reversalReason: entry.reversalReason === "—" ? null : entry.reversalReason,
+          isReversal: entry.isReversal,
+          isReversed: entry.isReversed,
         })),
       },
       {

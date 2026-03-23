@@ -91,13 +91,17 @@ model InventoryTransaction {
   vendor            String?
   notes             String?
   photoUrl          String?
-  receivingRecordId String?                  @unique
-  createdAt         DateTime                 @default(now())
+  receivingRecordId      String?                  @unique
+  reversedTransactionId  String?                  @unique
+  reversalReason         String?
+  createdAt              DateTime                 @default(now())
 
-  material       Material       @relation(fields: [materialId], references: [id])
-  locationFromJob Job?           @relation("TxFromJob", fields: [locationFromJobId], references: [id], onDelete: SetNull)
-  locationToJob   Job?           @relation("TxToJob", fields: [locationToJobId], references: [id], onDelete: SetNull)
-  receivingRecord ReceivingRecord? @relation(fields: [receivingRecordId], references: [id], onDelete: SetNull)
+  material              Material              @relation(fields: [materialId], references: [id])
+  locationFromJob       Job?                  @relation("TxFromJob", fields: [locationFromJobId], references: [id], onDelete: SetNull)
+  locationToJob         Job?                  @relation("TxToJob", fields: [locationToJobId], references: [id], onDelete: SetNull)
+  receivingRecord       ReceivingRecord?      @relation(fields: [receivingRecordId], references: [id], onDelete: SetNull)
+  reversedTransaction   InventoryTransaction? @relation("InventoryTransactionReversal", fields: [reversedTransactionId], references: [id], onDelete: SetNull)
+  reversalTransaction   InventoryTransaction? @relation("InventoryTransactionReversal")
 
   @@index([materialId, createdAt])
   @@index([locationFromJobId, createdAt])
