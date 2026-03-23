@@ -19,8 +19,8 @@ export default async function AlertsPage({
 }) {
   const role = getRole(searchParams.role);
   const [{ data: trackedPurchaseOrders }, { data: triggeredAlerts }] = await Promise.all([
-    listExpectedPurchaseOrders(),
-    listPurchaseOrderAlerts(50)
+    listExpectedPurchaseOrders(role),
+    listPurchaseOrderAlerts(50, role)
   ]);
 
   const successMessage = searchParams.success ? successMessages[searchParams.success] ?? null : null;

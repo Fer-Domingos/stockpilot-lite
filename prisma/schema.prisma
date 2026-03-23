@@ -108,6 +108,7 @@ model ExpectedPurchaseOrder {
   id                 String   @id @default(cuid())
   poNumber           String
   normalizedPoNumber String   @unique
+  ownerId            String?
   note               String?
   status             PurchaseOrderAlertStatus @default(OPEN)
   lastTriggeredAt    DateTime?
@@ -119,9 +120,11 @@ model ExpectedPurchaseOrder {
   jobId              String?
 
   job    Job?                  @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  owner  AdminUser?            @relation(fields: [ownerId], references: [id], onDelete: SetNull)
   alerts PurchaseOrderAlert[]
 
   @@index([jobId])
+  @@index([ownerId])
   @@index([poNumber])
 }
 
@@ -129,6 +132,7 @@ model PurchaseOrderAlert {
   id                String   @id @default(cuid())
   expectedPoId      String
   receivingRecordId String
+  ownerId           String?
   message           String
   status            PurchaseOrderAlertStatus @default(TRIGGERED)
   seenAt            DateTime?
@@ -138,10 +142,12 @@ model PurchaseOrderAlert {
   updatedAt         DateTime @updatedAt
 
   expectedPo      ExpectedPurchaseOrder @relation(fields: [expectedPoId], references: [id], onDelete: Cascade)
+  owner           AdminUser?            @relation(fields: [ownerId], references: [id], onDelete: SetNull)
   receivingRecord ReceivingRecord       @relation(fields: [receivingRecordId], references: [id], onDelete: Cascade)
 
   @@unique([expectedPoId, receivingRecordId])
   @@index([createdAt])
+  @@index([ownerId])
 }
 
 model AdminUser {
@@ -150,6 +156,9 @@ model AdminUser {
   passwordHash String
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+
+  expectedPurchaseOrders ExpectedPurchaseOrder[]
+  purchaseOrderAlerts    PurchaseOrderAlert[]
 }
 
 enum InventoryTransactionType {

@@ -18,8 +18,8 @@ export default async function PurchaseOrderAlertsPage({
   const role = getRole(searchParams.role);
   const [{ data: jobs }, { data: trackedPurchaseOrders }, { data: alerts }] = await Promise.all([
     listJobs(),
-    listExpectedPurchaseOrders(),
-    listPurchaseOrderAlerts(25)
+    listExpectedPurchaseOrders(role),
+    listPurchaseOrderAlerts(25, role)
   ]);
 
   const openJobs = jobs.filter((job) => job.status === 'OPEN');
