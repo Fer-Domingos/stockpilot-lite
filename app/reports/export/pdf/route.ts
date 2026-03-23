@@ -3,6 +3,12 @@ import { getReportsData } from "@/app/actions";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+function normalizeReversalFilter(value: string | null) {
+  return value === "include" || value === "only" || value === "exclude"
+    ? value
+    : undefined;
+}
+
 type ReportsData = Awaited<ReturnType<typeof getReportsData>>["data"];
 
 type PdfLine = {
@@ -173,6 +179,7 @@ function buildReportLines(data: ReportsData) {
     lines,
     `Selected Material: ${data.reportMetadata.selectedMaterial ? `${data.reportMetadata.selectedMaterial.sku} — ${data.reportMetadata.selectedMaterial.name}` : "All materials"}`,
   );
+  pushWrappedLine(lines, `Reversals: ${data.filters.reversalFilter}`);
 
   lines.push({ text: "Summary Cards", size: 14, bold: true, gapBefore: 14 });
   pushWrappedLine(
@@ -190,6 +197,10 @@ function buildReportLines(data: ReportsData) {
   pushWrappedLine(
     lines,
     `Receipts in range: ${data.activitySummary.receiveQuantity}`,
+  );
+  pushWrappedLine(
+    lines,
+    `Reversals in range: ${data.activitySummary.reversalCount}`,
   );
 
   lines.push({
@@ -265,6 +276,41 @@ function buildReportLines(data: ReportsData) {
         ]),
         size: 10,
       });
+    });
+  }
+
+  lines.push({
+    text: "Reversal Activity",
+    size: 14,
+    bold: true,
+    gapBefore: 14,
+  });
+  if (data.reversalActivity.length === 0) {
+    pushWrappedLine(lines, "No reversal activity found for this filter.", {
+      size: 10,
+      gapBefore: 4,
+    });
+  } else {
+    data.reversalActivity.forEach((entry, index) => {
+      lines.push({
+        text: `Reversal ${index + 1}`,
+        size: 11,
+        bold: true,
+        gapBefore: index === 0 ? 4 : 10,
+      });
+      pushWrappedLine(lines, `Date: ${formatDateTime(entry.reversedAt ?? entry.createdAt)} UTC`, {
+        size: 10,
+      });
+      pushWrappedLine(lines, `Original Transaction ID: ${entry.originalTransactionId ?? "—"}`, { size: 10 });
+      pushWrappedLine(lines, `Type: ${entry.transactionType}`, { size: 10 });
+      pushWrappedLine(lines, `Material: ${entry.materialName} (${entry.materialSku})`, {
+        size: 10,
+      });
+      pushWrappedLine(lines, `Quantity: ${entry.quantity} ${entry.unit}`, {
+        size: 10,
+      });
+      pushWrappedLine(lines, `Reason: ${entry.reversalReason}`, { size: 10 }, 96);
+      pushWrappedLine(lines, `Reversed By: ${entry.reversedByEmail}`, { size: 10 });
     });
   }
 
@@ -427,6 +473,7 @@ export async function GET(request: Request) {
     materialId: searchParams.get("materialId") ?? undefined,
     timeZoneOffsetMinutes:
       searchParams.get("timeZoneOffsetMinutes") ?? undefined,
+    reversalFilter: normalizeReversalFilter(searchParams.get("reversalFilter")),
   });
 
   const pdf = buildPdfBuffer(buildReportLines(data));

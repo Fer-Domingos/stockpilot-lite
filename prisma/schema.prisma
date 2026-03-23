@@ -89,11 +89,13 @@ model InventoryTransaction {
   invoiceNumber     String?
   vendor            String?
   notes             String?
-  photoUrl          String?
-  receivingRecordId      String?                  @unique
-  reversedTransactionId  String?                  @unique
-  reversalReason         String?
-  createdAt              DateTime                 @default(now())
+  photoUrl              String?
+  receivingRecordId     String?                  @unique
+  reversedTransactionId String?                  @unique
+  reversalReason        String?
+  reversedByUserId      String?
+  reversedAt            DateTime?
+  createdAt             DateTime                 @default(now())
 
   material              Material              @relation(fields: [materialId], references: [id])
   locationFromJob       Job?                  @relation("TxFromJob", fields: [locationFromJobId], references: [id], onDelete: SetNull)
@@ -101,10 +103,12 @@ model InventoryTransaction {
   receivingRecord       ReceivingRecord?      @relation(fields: [receivingRecordId], references: [id], onDelete: SetNull)
   reversedTransaction   InventoryTransaction? @relation("InventoryTransactionReversal", fields: [reversedTransactionId], references: [id], onDelete: SetNull)
   reversalTransaction   InventoryTransaction? @relation("InventoryTransactionReversal")
+  reversedByUser        AdminUser?            @relation(fields: [reversedByUserId], references: [id], onDelete: SetNull)
 
   @@index([materialId, createdAt])
   @@index([locationFromJobId, createdAt])
   @@index([locationToJobId, createdAt])
+  @@index([reversedByUserId, createdAt])
 }
 
 
@@ -161,8 +165,9 @@ model AdminUser {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  expectedPurchaseOrders ExpectedPurchaseOrder[]
-  purchaseOrderAlerts    PurchaseOrderAlert[]
+  expectedPurchaseOrders      ExpectedPurchaseOrder[]
+  purchaseOrderAlerts         PurchaseOrderAlert[]
+  reversePerformedTransactions InventoryTransaction[]
 }
 
 enum InventoryTransactionType {
