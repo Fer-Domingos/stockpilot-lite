@@ -1,4 +1,4 @@
-export type AppRole = 'Admin' | 'Engineer / PM';
+export type AppRole = 'ADMIN' | 'PM';
 
 export type Job = {
   id: string;
@@ -213,8 +213,8 @@ export const transactions: TransactionRow[] = [
 ];
 
 export const rolePermissions: Record<AppRole, string> = {
-  Admin: 'Full access to receiving, transfers, history, and reports.',
-  'Engineer / PM': 'Read-only KPI and reports visibility for planning and forecasting.'
+  ADMIN: 'Full access to receive, transfer, issue, manage inventory, review all alerts, and manage system data.',
+  PM: 'Read-only inventory, reports/history access, PO alert creation, and visibility limited to their own alerts.'
 };
 
 export function getLocationName(locationId: string) {

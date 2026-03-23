@@ -8,6 +8,7 @@ import { InventoryLocationType, Prisma, PurchaseOrderAlertStatus } from '@prisma
 
 import { prisma } from '@/lib/prisma';
 import { authConfig, decodeSession } from '@/lib/session';
+import { AppRole } from '@/lib/demo-data';
 
 export type MaterialRecord = {
   id: string;
@@ -207,6 +208,28 @@ type ReportsFilterInput = {
 const statuses: JobStatus[] = ['OPEN', 'CLOSED'];
 const materialUnits = ['UNIT', 'SHEETS'] as const;
 
+
+
+async function getCurrentSession() {
+  const sessionToken = cookies().get(authConfig.sessionCookieName)?.value;
+  return decodeSession(sessionToken);
+}
+
+async function getCurrentRole(): Promise<AppRole> {
+  const session = await getCurrentSession();
+  return session?.role === 'PM' ? 'PM' : 'ADMIN';
+}
+
+async function requireRole(...allowedRoles: AppRole[]) {
+  const role = await getCurrentRole();
+
+  if (!allowedRoles.includes(role)) {
+    throw new Error('You are not authorized to perform this action.');
+  }
+
+  return role;
+}
+
 function normalizeTrackedPoNumber(value: string): string {
   return value.trim().toUpperCase();
 }
@@ -216,8 +239,7 @@ function serializeAlertStatus(status: PurchaseOrderAlertStatus): AlertStatus {
 }
 
 async function getCurrentSessionUser() {
-  const sessionToken = cookies().get(authConfig.sessionCookieName)?.value;
-  const session = await decodeSession(sessionToken);
+  const session = await getCurrentSession();
 
   if (!session?.email) {
     return null;
@@ -229,8 +251,8 @@ async function getCurrentSessionUser() {
   });
 }
 
-async function buildAlertAccessFilter(role: 'Admin' | 'Engineer / PM') {
-  if (role === 'Admin') {
+async function buildAlertAccessFilter(role: AppRole) {
+  if (role === 'ADMIN') {
     return {};
   }
 
@@ -246,7 +268,7 @@ async function buildAlertAccessFilter(role: 'Admin' | 'Engineer / PM') {
 async function updateTrackedPurchaseOrderStatus(
   expectedPoId: string,
   status: AlertStatus,
-  role: 'Admin' | 'Engineer / PM' = 'Admin'
+  role: AppRole = 'ADMIN'
 ) {
   const currentUser = await getCurrentSessionUser();
   const trackedPo = await prisma.expectedPurchaseOrder.findUnique({
@@ -262,7 +284,7 @@ async function updateTrackedPurchaseOrderStatus(
     redirect('/alerts?error=invalid-alert');
   }
 
-  if (role === 'Engineer / PM') {
+  if (role === 'PM') {
     if (!currentUser || !trackedPo.ownerId || trackedPo.ownerId !== currentUser.id) {
       redirect('/alerts?error=invalid-alert');
     }
@@ -631,6 +653,12 @@ export async function listMaterials(): Promise<{ data: MaterialRecord[] }> {
 }
 
 export async function createMaterial(payload: MaterialPayload): Promise<ActionResult<MaterialRecord>> {
+  try {
+    await requireRole('ADMIN');
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : 'Unauthorized.' };
+  }
+
   const validation = validateMaterialPayload(payload);
   if (!validation.ok) {
     return validation;
@@ -670,6 +698,12 @@ export async function createMaterial(payload: MaterialPayload): Promise<ActionRe
 }
 
 export async function updateMaterial(id: string, payload: MaterialPayload): Promise<ActionResult<MaterialRecord>> {
+  try {
+    await requireRole('ADMIN');
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : 'Unauthorized.' };
+  }
+
   const validation = validateMaterialPayload(payload);
   if (!validation.ok) {
     return validation;
@@ -729,6 +763,7 @@ export async function updateMaterial(id: string, payload: MaterialPayload): Prom
 
 export async function deleteMaterial(id: string): Promise<ActionResult> {
   try {
+    await requireRole('ADMIN');
     await prisma.material.delete({ where: { id } });
     revalidatePath('/materials');
     return { ok: true };
@@ -761,6 +796,7 @@ export async function listJobs(): Promise<{ data: JobRecord[] }> {
 
 export async function createJob(payload: JobPayload): Promise<ActionResult<JobRecord>> {
   try {
+    await requireRole('ADMIN');
     const created = await prisma.job.create({
       data: normalizeJobPayload(payload)
     });
@@ -783,6 +819,7 @@ export async function createJob(payload: JobPayload): Promise<ActionResult<JobRe
 
 export async function updateJob(id: string, payload: JobPayload): Promise<ActionResult<JobRecord>> {
   try {
+    await requireRole('ADMIN');
     const updated = await prisma.job.update({
       where: { id },
       data: normalizeJobPayload(payload)
@@ -806,6 +843,7 @@ export async function updateJob(id: string, payload: JobPayload): Promise<Action
 
 export async function deleteJob(id: string): Promise<ActionResult> {
   try {
+    await requireRole('ADMIN');
     await prisma.job.delete({ where: { id } });
     revalidatePath('/jobs');
     return { ok: true };
@@ -816,7 +854,7 @@ export async function deleteJob(id: string): Promise<ActionResult> {
 }
 
 
-export async function getActiveAlertCount(role: 'Admin' | 'Engineer / PM' = 'Admin'): Promise<number> {
+export async function getActiveAlertCount(role: AppRole = 'ADMIN'): Promise<number> {
   noStore();
 
   try {
@@ -836,7 +874,7 @@ export async function getActiveAlertCount(role: 'Admin' | 'Engineer / PM' = 'Adm
   }
 }
 
-export async function listExpectedPurchaseOrders(role: 'Admin' | 'Engineer / PM' = 'Admin'): Promise<{ data: ExpectedPurchaseOrderRecord[] }> {
+export async function listExpectedPurchaseOrders(role: AppRole = 'ADMIN'): Promise<{ data: ExpectedPurchaseOrderRecord[] }> {
   noStore();
 
   try {
@@ -908,6 +946,8 @@ export async function listExpectedPurchaseOrders(role: 'Admin' | 'Engineer / PM'
 }
 
 export async function createExpectedPurchaseOrder(formData: FormData) {
+  await requireRole('ADMIN', 'PM');
+
   const poNumber = String(formData.get('poNumber') ?? '').trim();
   const normalizedPoNumber = normalizeTrackedPoNumber(poNumber);
   const jobIdValue = String(formData.get('jobId') ?? '').trim();
@@ -950,8 +990,10 @@ export async function createExpectedPurchaseOrder(formData: FormData) {
 }
 
 export async function markPurchaseOrderAlertSeen(formData: FormData) {
+  await requireRole('ADMIN');
+
   const expectedPoId = String(formData.get('expectedPoId') ?? '').trim();
-  const role = formData.get('role') === 'Engineer / PM' ? 'Engineer / PM' : 'Admin';
+  const role = await getCurrentRole();
 
   if (!expectedPoId) {
     redirect('/alerts?error=invalid-alert');
@@ -963,8 +1005,10 @@ export async function markPurchaseOrderAlertSeen(formData: FormData) {
 }
 
 export async function markPurchaseOrderAlertResolved(formData: FormData) {
+  await requireRole('ADMIN');
+
   const expectedPoId = String(formData.get('expectedPoId') ?? '').trim();
-  const role = formData.get('role') === 'Engineer / PM' ? 'Engineer / PM' : 'Admin';
+  const role = await getCurrentRole();
 
   if (!expectedPoId) {
     redirect('/alerts?error=invalid-alert');
@@ -975,7 +1019,7 @@ export async function markPurchaseOrderAlertResolved(formData: FormData) {
   redirect(`/alerts?role=${encodeURIComponent(role)}&success=resolved`);
 }
 
-export async function listPurchaseOrderAlerts(limit = 10, role: 'Admin' | 'Engineer / PM' = 'Admin'): Promise<{ data: PurchaseOrderAlertRecord[] }> {
+export async function listPurchaseOrderAlerts(limit = 10, role: AppRole = 'ADMIN'): Promise<{ data: PurchaseOrderAlertRecord[] }> {
   noStore();
 
   try {
@@ -1041,6 +1085,12 @@ export async function listPurchaseOrderAlerts(limit = 10, role: 'Admin' | 'Engin
 }
 
 export async function receiveMaterial(formData: FormData) {
+  try {
+    await requireRole('ADMIN');
+  } catch (error) {
+    redirect(`/receive-materials?error=save-failed&message=${encodeURIComponent(error instanceof Error ? error.message : 'Unauthorized.')}`);
+  }
+
   const materialId = String(formData.get('materialId') ?? '');
   const destinationValue = String(formData.get('destination') ?? '').trim();
   const legacyDestinationType = String(formData.get('destinationType') ?? '').trim();
@@ -1311,6 +1361,12 @@ export async function listReceivingRecords() {
 }
 
 export async function transferMaterial(formData: FormData) {
+  try {
+    await requireRole('ADMIN');
+  } catch (error) {
+    redirect('/transfer-materials?error=save-failed');
+  }
+
   const materialId = String(formData.get('materialId') ?? '');
   const fromLocation = String(formData.get('fromLocation') ?? '');
   const toLocation = String(formData.get('toLocation') ?? '');
@@ -1383,6 +1439,12 @@ export async function transferMaterial(formData: FormData) {
 }
 
 export async function issueMaterial(formData: FormData) {
+  try {
+    await requireRole('ADMIN');
+  } catch (error) {
+    redirect('/issue-materials?error=save-failed');
+  }
+
   const materialId = String(formData.get('materialId') ?? '');
   const fromLocation = String(formData.get('fromLocation') ?? '');
   const notes = String(formData.get('notes') ?? '').trim();
@@ -1555,7 +1617,7 @@ export async function listInventoryTransactions(): Promise<{ data: InventoryTran
   }
 }
 
-export async function getDashboardData(role: 'Admin' | 'Engineer / PM' = 'Admin'): Promise<DashboardView> {
+export async function getDashboardData(role: AppRole = 'ADMIN'): Promise<DashboardView> {
   try {
     const [totalSku, openJobs, onHandAggregate, materials, balanceSums, balances, txns, trackedPoAlerts, poAlerts, activeAlertCount] = await Promise.all([
       prisma.material.count(),

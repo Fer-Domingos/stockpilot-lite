@@ -23,7 +23,7 @@ type HistoryRow = {
 
 export default async function HistoryPage({ searchParams }: { searchParams: { role?: string } }) {
   noStore();
-  const role = getRole(searchParams.role);
+  const role = await getRole(searchParams.role);
 
   const requestHeaders = await headers();
   const host = requestHeaders.get('x-forwarded-host') ?? requestHeaders.get('host');

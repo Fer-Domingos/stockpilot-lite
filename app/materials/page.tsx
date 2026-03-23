@@ -7,12 +7,12 @@ import { getRole } from '@/lib/role';
 export const dynamic = 'force-dynamic';
 
 export default async function MaterialsPage({ searchParams }: { searchParams: { role?: string } }) {
-  const role = getRole(searchParams.role);
+  const role = await getRole(searchParams.role);
   const [{ data: materials }, { data: inventoryBalances }] = await Promise.all([listMaterials(), listInventoryBalances()]);
 
   return (
     <AppShell role={role}>
-      <MaterialsManager initialMaterials={materials} />
+      <MaterialsManager initialMaterials={materials} role={role} />
       <InventoryBalanceTable rows={inventoryBalances} />
     </AppShell>
   );

@@ -4,7 +4,7 @@ import { getDashboardData } from '@/app/actions';
 import { getRole } from '@/lib/role';
 
 export default async function DashboardPage({ searchParams }: { searchParams: { role?: string } }) {
-  const role = getRole(searchParams.role);
+  const role = await getRole(searchParams.role);
   const data = await getDashboardData(role);
 
   return (

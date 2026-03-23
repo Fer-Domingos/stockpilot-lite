@@ -1,9 +1,12 @@
 const SESSION_COOKIE = 'stockpilot_session';
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 8;
 
-type SessionPayload = {
+export type SessionRole = 'ADMIN' | 'PM';
+
+export type SessionPayload = {
   email: string;
   issuedAt: number;
+  role: SessionRole;
 };
 
 function getAuthSecret() {
@@ -90,7 +93,7 @@ export async function decodeSession(token?: string) {
     const payload = JSON.parse(fromBase64Url(base)) as SessionPayload;
     const isExpired = Date.now() - payload.issuedAt > SESSION_MAX_AGE_SECONDS * 1000;
 
-    if (!payload.email || isExpired) {
+    if (!payload.email || !payload.role || isExpired) {
       return null;
     }
 

@@ -1,14 +1,17 @@
 'use client';
 
 import { createExpectedPurchaseOrder, ExpectedPurchaseOrderRecord, JobRecord } from '@/app/actions';
+import { AppRole } from '@/lib/demo-data';
 import { AlertStatusBadge } from '@/app/components/alert-status-badge';
 
 export function PoTrackerManager({
   jobs,
-  trackedPurchaseOrders
+  trackedPurchaseOrders,
+  role
 }: {
   jobs: JobRecord[];
   trackedPurchaseOrders: ExpectedPurchaseOrderRecord[];
+  role: AppRole;
 }) {
   return (
     <>
@@ -19,6 +22,7 @@ export function PoTrackerManager({
         </div>
 
         <form action={createExpectedPurchaseOrder}>
+          <input type="hidden" name="role" value={role} />
           <label htmlFor="poNumber">PO Number</label>
           <input id="poNumber" name="poNumber" required placeholder="6-2353-01" />
 
