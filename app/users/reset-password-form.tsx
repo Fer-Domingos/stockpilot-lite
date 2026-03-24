@@ -12,7 +12,7 @@ function ResetPasswordButton() {
   const { pending } = useFormStatus();
 
   return (
-    <button type="submit" className="secondary-button" disabled={pending}>
+    <button type="submit" className="secondary-button">
       {pending ? 'Resetting...' : 'Reset Password'}
     </button>
   );
@@ -26,6 +26,8 @@ export function ResetPasswordForm({ userId }: ResetPasswordFormProps) {
   const [state, formAction] = useFormState(resetPasswordAction, initialState);
   const formRef = useRef<HTMLFormElement>(null);
   const [temporaryPassword, setTemporaryPassword] = useState('');
+  const [showTemporaryPassword, setShowTemporaryPassword] = useState(false);
+  const [showConfirmTemporaryPassword, setShowConfirmTemporaryPassword] = useState(false);
 
   useEffect(() => {
     if (state.ok) {
@@ -37,15 +39,41 @@ export function ResetPasswordForm({ userId }: ResetPasswordFormProps) {
   return (
     <form action={formAction} ref={formRef} className="reset-password-form">
       <input type="hidden" name="userId" value={userId} />
-      <input
-        name="temporaryPassword"
-        type="password"
-        minLength={8}
-        placeholder="Temporary password"
-        aria-label="Temporary password"
-        onChange={(event) => setTemporaryPassword(event.target.value)}
-        required
-      />
+      <div className="password-input-row">
+        <input
+          name="temporaryPassword"
+          type={showTemporaryPassword ? 'text' : 'password'}
+          minLength={8}
+          placeholder="Temporary password"
+          aria-label="Temporary password"
+          onChange={(event) => setTemporaryPassword(event.target.value)}
+          required
+        />
+        <button
+          type="button"
+          className="tertiary-button"
+          onClick={() => setShowTemporaryPassword((value) => !value)}
+        >
+          {showTemporaryPassword ? 'Hide' : 'Show'}
+        </button>
+      </div>
+      <div className="password-input-row">
+        <input
+          name="confirmTemporaryPassword"
+          type={showConfirmTemporaryPassword ? 'text' : 'password'}
+          minLength={8}
+          placeholder="Confirm temporary password"
+          aria-label="Confirm temporary password"
+          required
+        />
+        <button
+          type="button"
+          className="tertiary-button"
+          onClick={() => setShowConfirmTemporaryPassword((value) => !value)}
+        >
+          {showConfirmTemporaryPassword ? 'Hide' : 'Show'}
+        </button>
+      </div>
       <PasswordGuidance password={temporaryPassword} />
       <ResetPasswordButton />
       {state.error ? <p className="form-feedback form-feedback-error">{state.error}</p> : null}

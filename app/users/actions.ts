@@ -68,13 +68,18 @@ export async function resetPasswordAction(
 
   const userId = String(formData.get('userId') ?? '').trim();
   const temporaryPassword = String(formData.get('temporaryPassword') ?? '');
+  const confirmTemporaryPassword = String(formData.get('confirmTemporaryPassword') ?? '');
 
-  if (!userId || !temporaryPassword) {
-    return { ok: false, error: 'User and temporary password are required.' };
+  if (!userId || !temporaryPassword || !confirmTemporaryPassword) {
+    return { ok: false, error: 'User and both password fields are required.' };
   }
 
   if (temporaryPassword.length < 8) {
     return { ok: false, error: 'Temporary password must be at least 8 characters.' };
+  }
+
+  if (temporaryPassword !== confirmTemporaryPassword) {
+    return { ok: false, error: 'Passwords do not match' };
   }
 
   const user = await prisma.adminUser.findUnique({
