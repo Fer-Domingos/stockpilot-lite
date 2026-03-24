@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useFormState, useFormStatus } from 'react-dom';
 
+import { PasswordGuidance } from '@/app/components/password-guidance';
 import { createUserAction, type UserManagementResult } from '@/app/users/actions';
 
 const initialState: UserManagementResult = { ok: false };
@@ -16,10 +17,12 @@ function SubmitButton() {
 export function CreateUserForm() {
   const [state, formAction] = useFormState(createUserAction, initialState);
   const formRef = useRef<HTMLFormElement>(null);
+  const [password, setPassword] = useState('');
 
   useEffect(() => {
     if (state.ok) {
       formRef.current?.reset();
+      setPassword('');
     }
   }, [state.ok]);
 
@@ -43,7 +46,15 @@ export function CreateUserForm() {
         </div>
         <div>
           <label htmlFor="password">Password</label>
-          <input id="password" name="password" type="password" minLength={6} required />
+          <input
+            id="password"
+            name="password"
+            type="password"
+            minLength={8}
+            onChange={(event) => setPassword(event.target.value)}
+            required
+          />
+          <PasswordGuidance password={password} />
         </div>
         <div>
           <label htmlFor="role">Role</label>
