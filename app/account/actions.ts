@@ -42,7 +42,7 @@ export async function changePasswordAction(
   }
 
   if (newPassword !== confirmNewPassword) {
-    return { ok: false, error: 'New password confirmation does not match.' };
+    return { ok: false, error: 'Passwords do not match' };
   }
 
   if (currentPassword === newPassword) {
