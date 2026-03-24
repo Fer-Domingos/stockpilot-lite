@@ -43,6 +43,22 @@ export function IssueMaterialForm({ materials, jobs }: { materials: MaterialReco
         ))}
       </select>
 
+      <label htmlFor="issueTo">Issue To</label>
+      <select id="issueTo" name="issueTo" defaultValue="production">
+        <option value="production">Production / Consumption</option>
+        <option value="job">Specific Job</option>
+      </select>
+
+      <label htmlFor="issueToJobId">Issue To Job (Optional)</label>
+      <select id="issueToJobId" name="issueToJobId" defaultValue="">
+        <option value="">Select job</option>
+        {jobs.map((job) => (
+          <option key={job.id} value={job.id}>
+            {job.number} — {job.name}
+          </option>
+        ))}
+      </select>
+
       <label htmlFor="notes">Issue Notes</label>
       <textarea id="notes" name="notes" rows={3} placeholder="Work order, station, phase..." />
 
