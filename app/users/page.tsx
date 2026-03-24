@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 
 import { AppShell } from '@/app/components/app-shell';
 import { CreateUserForm } from '@/app/users/create-user-form';
+import { ResetPasswordForm } from '@/app/users/reset-password-form';
 import { prisma } from '@/lib/prisma';
 import { getRole } from '@/lib/role';
 
@@ -44,6 +45,7 @@ export default async function UsersPage() {
               <th>Email</th>
               <th>Role</th>
               <th>Created</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -53,6 +55,9 @@ export default async function UsersPage() {
                 <td>{user.email}</td>
                 <td>{user.role}</td>
                 <td>{new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' }).format(user.createdAt)}</td>
+                <td>
+                  <ResetPasswordForm userId={user.id} />
+                </td>
               </tr>
             ))}
           </tbody>
