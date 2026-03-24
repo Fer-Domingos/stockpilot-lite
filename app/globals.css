@@ -495,3 +495,23 @@ form {
   margin-top: 0;
   width: 100%;
 }
+
+.profile-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.profile-details dt {
+  font-size: 0.82rem;
+  margin-bottom: 4px;
+}
+
+.profile-details dd {
+  margin: 0;
+  font-weight: 600;
+}
+
+.change-password-form {
+  max-width: 460px;
+}
