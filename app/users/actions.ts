@@ -37,8 +37,8 @@ export async function createUserAction(
     return { ok: false, error: 'Name, email, and password are required.' };
   }
 
-  if (password.length < 6) {
-    return { ok: false, error: 'Password must be at least 6 characters.' };
+  if (password.length < 8) {
+    return { ok: false, error: 'Password must be at least 8 characters.' };
   }
 
   const existingUser = await prisma.adminUser.findUnique({ where: { email } });
@@ -73,8 +73,8 @@ export async function resetPasswordAction(
     return { ok: false, error: 'User and temporary password are required.' };
   }
 
-  if (temporaryPassword.length < 6) {
-    return { ok: false, error: 'Temporary password must be at least 6 characters.' };
+  if (temporaryPassword.length < 8) {
+    return { ok: false, error: 'Temporary password must be at least 8 characters.' };
   }
 
   const user = await prisma.adminUser.findUnique({
