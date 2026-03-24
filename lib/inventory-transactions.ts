@@ -23,6 +23,7 @@ export type InventoryTransactionView = {
   locationTo: string;
   invoiceNumber: string;
   vendorName: string;
+  usedFor: string;
   notes: string;
   hasPhoto: boolean;
 };
@@ -54,6 +55,7 @@ export function mapInventoryTransaction(entry: {
   quantity: number;
   invoiceNumber: string | null;
   vendor: string | null;
+  usedFor: string | null;
   notes: string | null;
   photoUrl: string | null;
   locationFromType: InventoryLocationType | null;
@@ -114,6 +116,7 @@ export function mapInventoryTransaction(entry: {
         : formatLocationLabel(entry.locationToType, entry.locationToJob),
     invoiceNumber: entry.invoiceNumber ?? "—",
     vendorName: entry.vendor ?? "—",
+    usedFor: entry.usedFor ?? "—",
     notes: entry.notes ?? "—",
     hasPhoto: Boolean(entry.photoUrl),
   };

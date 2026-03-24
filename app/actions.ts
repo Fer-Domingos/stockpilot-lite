@@ -17,6 +17,7 @@ import {
 } from "@/lib/inventory-transactions";
 import { authConfig, decodeSession } from "@/lib/session";
 import { AppRole } from "@/lib/demo-data";
+import { isIssueUsedFor, issueUsedForOptions, type IssueUsedFor } from "@/lib/issue-usage";
 
 export type MaterialRecord = {
   id: string;
@@ -138,6 +139,12 @@ export type TopUsedMaterialRow = {
   issuedQuantity: number;
 };
 
+export type ConsumptionByTypeRow = {
+  usedFor: IssueUsedFor;
+  issueCount: number;
+  issuedQuantity: number;
+};
+
 export type ReportsActivitySummary = {
   totalTransactions: number;
   receiveCount: number;
@@ -169,11 +176,13 @@ export type ReportsView = {
     endDate: string | null;
     jobId: string | null;
     materialId: string | null;
+    usedFor: IssueUsedFor | null;
     reversalFilter: "exclude" | "include" | "only";
   };
   filterOptions: {
     jobs: Array<{ id: string; number: string; name: string }>;
     materials: Array<{ id: string; sku: string; name: string }>;
+    usedFor: IssueUsedFor[];
   };
   reportMetadata: {
     mode:
@@ -194,6 +203,7 @@ export type ReportsView = {
     rows: ReportsInventoryRow[];
   };
   topMaterials: TopUsedMaterialRow[];
+  consumptionByType: ConsumptionByTypeRow[];
   activitySummary: ReportsActivitySummary;
   recentActivity: InventoryTransactionRecord[];
   reversalActivity: ReversalActivityRow[];
@@ -225,6 +235,7 @@ type ReportsFilterInput = {
   endDate?: string;
   jobId?: string;
   materialId?: string;
+  usedFor?: string;
   timeZoneOffsetMinutes?: string;
   reversalFilter?: "exclude" | "include" | "only";
 };
@@ -1618,11 +1629,13 @@ export async function issueMaterial(formData: FormData) {
 
   const materialId = String(formData.get("materialId") ?? "");
   const fromLocation = String(formData.get("fromLocation") ?? "");
+  const usedForInput = String(formData.get("usedFor") ?? "").trim();
   const notes = String(formData.get("notes") ?? "").trim();
   const quantity = Number(formData.get("quantity") ?? 0);
   const source = parseLocation(fromLocation);
+  const usedFor = isIssueUsedFor(usedForInput) ? usedForInput : null;
 
-  if (!materialId || !source || !Number.isFinite(quantity) || quantity <= 0) {
+  if (!materialId || !source || !usedFor || !Number.isFinite(quantity) || quantity <= 0) {
     redirect("/issue-materials?error=invalid-issue");
   }
 
@@ -1664,6 +1677,7 @@ export async function issueMaterial(formData: FormData) {
           locationFromJobId: normalizedFromLocation.jobId,
           locationToType: null,
           locationToJobId: null,
+          usedFor,
           notes: notes || null,
         },
       });
@@ -2029,6 +2043,10 @@ export async function getReportsData(
   const normalizedEndDate = filters.endDate?.trim() || null;
   const normalizedJobId = filters.jobId?.trim() || null;
   const normalizedMaterialId = filters.materialId?.trim() || null;
+  const normalizedUsedForInput = filters.usedFor?.trim() || null;
+  const normalizedUsedFor = normalizedUsedForInput && isIssueUsedFor(normalizedUsedForInput)
+    ? normalizedUsedForInput
+    : null;
   const normalizedTimeZoneOffsetMinutes =
     filters.timeZoneOffsetMinutes?.trim() || null;
   const reversalFilter = filters.reversalFilter === "only"
@@ -2080,6 +2098,11 @@ export async function getReportsData(
     ];
   }
 
+  if (normalizedUsedFor) {
+    transactionWhere.transactionType = "ISSUE";
+    transactionWhere.usedFor = normalizedUsedFor;
+  }
+
   if (reversalFilter === "exclude") {
     transactionWhere.reversedTransactionId = null;
   } else if (reversalFilter === "only") {
@@ -2096,6 +2119,7 @@ export async function getReportsData(
       balances,
       transactions,
       issueGroups,
+      issueUsageGroups,
       activityCounts,
       reversalTransactions,
     ] = await Promise.all([
@@ -2158,6 +2182,21 @@ export async function getReportsData(
           },
         },
         take: 5,
+      }),
+      prisma.inventoryTransaction.groupBy({
+        by: ["usedFor"],
+        where: {
+          transactionType: "ISSUE",
+          usedFor: { not: null },
+          ...(resolvedTransactionWhere ?? {}),
+        },
+        _sum: { quantity: true },
+        _count: { _all: true },
+        orderBy: {
+          _sum: {
+            quantity: "desc",
+          },
+        },
       }),
       prisma.inventoryTransaction.groupBy({
         by: ["transactionType"],
@@ -2285,6 +2324,13 @@ export async function getReportsData(
       .filter((entry): entry is TopUsedMaterialRow => entry !== null);
 
     const recentActivity: InventoryTransactionRecord[] = transactions;
+    const consumptionByType: ConsumptionByTypeRow[] = issueUsageGroups
+      .filter((entry): entry is typeof entry & { usedFor: string } => Boolean(entry.usedFor && isIssueUsedFor(entry.usedFor)))
+      .map((entry) => ({
+        usedFor: entry.usedFor as IssueUsedFor,
+        issueCount: entry._count._all,
+        issuedQuantity: Math.abs(entry._sum.quantity ?? 0),
+      }));
 
     const summaryByType = new Map(
       activityCounts.map((entry) => [entry.transactionType, entry]),
@@ -2297,6 +2343,7 @@ export async function getReportsData(
           endDate: normalizedEndDate,
           jobId: selectedJob?.id ?? null,
           materialId: selectedMaterial?.id ?? null,
+          usedFor: normalizedUsedFor,
           reversalFilter,
         },
         filterOptions: {
@@ -2306,6 +2353,7 @@ export async function getReportsData(
             sku: material.sku,
             name: material.name,
           })),
+          usedFor: [...issueUsedForOptions],
         },
         reportMetadata: {
           mode: reportMode,
@@ -2317,6 +2365,7 @@ export async function getReportsData(
           rows: inventoryRows,
         },
         topMaterials,
+        consumptionByType,
         activitySummary: {
           totalTransactions: activityCounts.reduce(
             (sum, entry) => sum + entry._count._all,
@@ -2358,11 +2407,13 @@ export async function getReportsData(
           endDate: normalizedEndDate,
           jobId: normalizedJobId,
           materialId: normalizedMaterialId,
+          usedFor: normalizedUsedFor,
           reversalFilter,
         },
         filterOptions: {
           jobs: [],
           materials: [],
+          usedFor: [...issueUsedForOptions],
         },
         reportMetadata: {
           mode:
@@ -2381,6 +2432,7 @@ export async function getReportsData(
           rows: [],
         },
         topMaterials: [],
+        consumptionByType: [],
         activitySummary: {
           totalTransactions: 0,
           receiveCount: 0,

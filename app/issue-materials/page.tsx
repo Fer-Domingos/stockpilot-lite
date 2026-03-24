@@ -5,7 +5,7 @@ import { canManageInventory } from '@/lib/permissions';
 import { getRole } from '@/lib/role';
 
 const errorMessages: Record<string, string> = {
-  'invalid-issue': 'Material, quantity, and source are required.',
+  'invalid-issue': 'Material, quantity, source, and Used For are required.',
   'save-failed': 'Unable to post issue. Verify available source stock and try again.'
 };
 
