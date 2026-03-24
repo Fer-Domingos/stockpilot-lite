@@ -18,7 +18,8 @@ const linksByRole: Record<AppRole, Array<{ href: string; label: string; hasCount
     { href: '/alerts', label: 'Alerts', hasCounter: true },
     { href: '/history', label: 'History' },
     { href: '/reports', label: 'Reports' },
-    { href: '/users', label: 'Users' }
+    { href: '/users', label: 'Users' },
+    { href: '/account', label: 'My Account' }
   ],
   PM: [
     { href: '/dashboard', label: 'Dashboard' },
@@ -26,7 +27,8 @@ const linksByRole: Record<AppRole, Array<{ href: string; label: string; hasCount
     { href: '/po-alerts', label: 'PO Alerts' },
     { href: '/alerts', label: 'Alerts', hasCounter: true },
     { href: '/history', label: 'History' },
-    { href: '/reports', label: 'Reports' }
+    { href: '/reports', label: 'Reports' },
+    { href: '/account', label: 'My Account' }
   ]
 } as const;
 
