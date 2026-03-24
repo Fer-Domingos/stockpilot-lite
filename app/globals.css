@@ -473,3 +473,25 @@ form {
 .form-feedback-success {
   color: #166534;
 }
+
+.reset-password-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.reset-password-form input {
+  width: 190px;
+  min-width: 140px;
+}
+
+.reset-password-form button {
+  width: auto;
+  white-space: nowrap;
+}
+
+.reset-password-form .form-feedback {
+  margin-top: 0;
+  width: 100%;
+}

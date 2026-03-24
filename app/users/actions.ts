@@ -59,3 +59,38 @@ export async function createUserAction(
   revalidatePath('/users');
   return { ok: true };
 }
+
+export async function resetPasswordAction(
+  _prevState: UserManagementResult,
+  formData: FormData,
+): Promise<UserManagementResult> {
+  await requireAdmin();
+
+  const userId = String(formData.get('userId') ?? '').trim();
+  const temporaryPassword = String(formData.get('temporaryPassword') ?? '');
+
+  if (!userId || !temporaryPassword) {
+    return { ok: false, error: 'User and temporary password are required.' };
+  }
+
+  if (temporaryPassword.length < 6) {
+    return { ok: false, error: 'Temporary password must be at least 6 characters.' };
+  }
+
+  const user = await prisma.adminUser.findUnique({
+    where: { id: userId },
+    select: { id: true },
+  });
+
+  if (!user) {
+    return { ok: false, error: 'User not found.' };
+  }
+
+  await prisma.adminUser.update({
+    where: { id: userId },
+    data: { passwordHash: hashPassword(temporaryPassword) },
+  });
+
+  revalidatePath('/users');
+  return { ok: true };
+}
