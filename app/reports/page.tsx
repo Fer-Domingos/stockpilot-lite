@@ -12,6 +12,7 @@ type ReportsSearchParams = {
   endDate?: string;
   jobId?: string;
   materialId?: string;
+  usedFor?: string;
   timeZoneOffsetMinutes?: string;
   reversalFilter?: string;
 };
@@ -30,6 +31,7 @@ function buildReportsQuery(params: ReportsSearchParams) {
   if (params.endDate) query.set("endDate", params.endDate);
   if (params.jobId) query.set("jobId", params.jobId);
   if (params.materialId) query.set("materialId", params.materialId);
+  if (params.usedFor) query.set("usedFor", params.usedFor);
   if (params.timeZoneOffsetMinutes) {
     query.set("timeZoneOffsetMinutes", params.timeZoneOffsetMinutes);
   }
@@ -49,6 +51,7 @@ export default async function ReportsPage({
     endDate: searchParams.endDate,
     jobId: searchParams.jobId,
     materialId: searchParams.materialId,
+    usedFor: searchParams.usedFor,
     timeZoneOffsetMinutes: searchParams.timeZoneOffsetMinutes,
     reversalFilter: normalizeReversalFilter(searchParams.reversalFilter),
   });
@@ -59,6 +62,7 @@ export default async function ReportsPage({
     endDate: data.filters.endDate ?? undefined,
     jobId: data.filters.jobId ?? undefined,
     materialId: data.filters.materialId ?? undefined,
+    usedFor: data.filters.usedFor ?? undefined,
     timeZoneOffsetMinutes: searchParams.timeZoneOffsetMinutes,
     reversalFilter: data.filters.reversalFilter,
   });
@@ -82,6 +86,7 @@ export default async function ReportsPage({
                 ? ` · Material ${data.reportMetadata.selectedMaterial.sku} — ${data.reportMetadata.selectedMaterial.name}`
                 : ""}
               {` · Reversals: ${data.filters.reversalFilter}`}
+              {data.filters.usedFor ? ` · Used For: ${data.filters.usedFor}` : ""}
             </p>
           </div>
         </div>
@@ -138,6 +143,17 @@ export default async function ReportsPage({
               <option value="exclude">Exclude reversals</option>
               <option value="include">Include reversals</option>
               <option value="only">Only reversals</option>
+            </select>
+          </label>
+          <label>
+            Used For
+            <select name="usedFor" defaultValue={data.filters.usedFor ?? ""}>
+              <option value="">All usage types</option>
+              {data.filterOptions.usedFor.map((usedFor) => (
+                <option key={usedFor} value={usedFor}>
+                  {usedFor}
+                </option>
+              ))}
             </select>
           </label>
           <div className="reports-filter-actions">
@@ -336,6 +352,43 @@ export default async function ReportsPage({
         <article className="card">
           <div className="section-title">
             <div>
+              <h3>Consumption by Type</h3>
+              <p className="muted">ISSUE transactions grouped by Used For.</p>
+            </div>
+          </div>
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Used For</th>
+                  <th>Issue Transactions</th>
+                  <th>Total Issued</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.consumptionByType.length === 0 ? (
+                  <tr>
+                    <td colSpan={3} className="muted" style={{ textAlign: "center" }}>
+                      No issue consumption types found for this date range.
+                    </td>
+                  </tr>
+                ) : (
+                  data.consumptionByType.map((row) => (
+                    <tr key={row.usedFor}>
+                      <td>{row.usedFor}</td>
+                      <td>{row.issueCount}</td>
+                      <td>{row.issuedQuantity}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </article>
+
+        <article className="card">
+          <div className="section-title">
+            <div>
               <h3>Recent Activity Summary</h3>
               <p className="muted">
                 Most recent inventory transactions within the selected date
@@ -377,13 +430,14 @@ export default async function ReportsPage({
                   <th>Qty</th>
                   <th>From</th>
                   <th>To</th>
+                  <th>Used For</th>
                 </tr>
               </thead>
               <tbody>
                 {data.recentActivity.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={6}
+                      colSpan={7}
                       className="muted"
                       style={{ textAlign: "center" }}
                     >
@@ -401,6 +455,7 @@ export default async function ReportsPage({
                       </td>
                       <td>{entry.locationFrom}</td>
                       <td>{entry.locationTo}</td>
+                      <td>{entry.usedFor}</td>
                     </tr>
                   ))
                 )}

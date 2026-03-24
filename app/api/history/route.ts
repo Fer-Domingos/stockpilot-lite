@@ -23,6 +23,7 @@ export async function GET() {
           invoiceNumber:
             entry.invoiceNumber === "—" ? null : entry.invoiceNumber,
           vendorName: entry.vendorName === "—" ? null : entry.vendorName,
+          usedFor: entry.usedFor === "—" ? null : entry.usedFor,
           notes: entry.notes === "—" ? null : entry.notes,
           reversedTransactionId: entry.reversedTransactionId,
           reversalReason: entry.reversalReason === "—" ? null : entry.reversalReason,

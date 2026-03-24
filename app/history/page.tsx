@@ -20,6 +20,7 @@ type HistoryRow = {
   invoiceNumber?: string | null;
   vendorName?: string | null;
   vendor?: string | null;
+  usedFor?: string | null;
   notes?: string | null;
   reversedTransactionId?: string | null;
   reversalReason?: string | null;
@@ -62,6 +63,7 @@ export default async function HistoryPage({ searchParams }: { searchParams: { ro
     unit: row.unit,
     invoiceNumber: row.invoiceNumber ?? '—',
     vendorName: row.vendorName ?? row.vendor ?? '—',
+    usedFor: row.usedFor ?? '—',
     notes: row.notes ?? '—',
     reversedTransactionId: row.reversedTransactionId ?? null,
     reversalReason: row.reversalReason ?? null,
@@ -106,13 +108,14 @@ export default async function HistoryPage({ searchParams }: { searchParams: { ro
               <th>Invoice #</th>
               <th>Vendor</th>
               <th>Notes</th>
+              <th>Used For</th>
               <th>Action</th>
             </tr>
           </thead>
           <tbody>
             {transactions.length === 0 ? (
               <tr>
-                <td colSpan={11} className="muted" style={{ textAlign: 'center' }}>
+                <td colSpan={12} className="muted" style={{ textAlign: 'center' }}>
                   No transactions found yet.
                 </td>
               </tr>
@@ -144,6 +147,7 @@ export default async function HistoryPage({ searchParams }: { searchParams: { ro
                     <td>{entry.invoiceNumber}</td>
                     <td>{entry.vendorName}</td>
                     <td>{entry.notes}</td>
+                    <td>{entry.usedFor}</td>
                     <td>
                       {canReverse ? (
                         <details>

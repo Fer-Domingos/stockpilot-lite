@@ -4,6 +4,7 @@ import {
   type CellValue,
   type SheetDefinition,
 } from "@/lib/xlsx";
+import { isIssueUsedFor } from "@/lib/issue-usage";
 
 export const dynamic = "force-dynamic";
 
@@ -11,6 +12,10 @@ function normalizeReversalFilter(value: string | null) {
   return value === "include" || value === "only" || value === "exclude"
     ? value
     : undefined;
+}
+
+function normalizeUsedForFilter(value: string | null) {
+  return value && isIssueUsedFor(value) ? value : undefined;
 }
 
 function appendRow(rows: CellValue[][], values: CellValue[]) {
@@ -65,6 +70,7 @@ function buildMetadataRows(
         : "All materials",
     ],
     ["Reversals", data.filters.reversalFilter],
+    ["Used For", data.filters.usedFor ?? "All usage types"],
   ] satisfies CellValue[][];
 }
 
@@ -98,13 +104,13 @@ function buildSummarySheet(
   return {
     name: "Summary",
     rows,
-    freezePane: "A12",
-    autoFilter: "A11:E12",
+    freezePane: "A13",
+    autoFilter: "A12:E13",
     minColumnWidth: 18,
-    metadataRows: [3, 4, 5, 6, 7, 8],
+    metadataRows: [3, 4, 5, 6, 7, 8, 9],
     titleRow: 1,
-    sectionRows: [10],
-    tableHeaderRows: [11],
+    sectionRows: [11],
+    tableHeaderRows: [12],
     rightAlignedColumns: [0, 1, 2, 3, 4],
   };
 }
@@ -148,13 +154,13 @@ function buildInventorySheet(
   return {
     name: "Inventory",
     rows,
-    freezePane: "A12",
-    autoFilter: `A11:F${rows.length}`,
+    freezePane: "A13",
+    autoFilter: `A12:F${rows.length}`,
     minColumnWidth: 14,
-    metadataRows: [3, 4, 5, 6, 7, 8],
+    metadataRows: [3, 4, 5, 6, 7, 8, 9],
     titleRow: 1,
-    sectionRows: [10],
-    tableHeaderRows: [11],
+    sectionRows: [11],
+    tableHeaderRows: [12],
     rightAlignedColumns: [3, 4, 5],
   };
 }
@@ -202,13 +208,13 @@ function buildMostUsedSheet(
   return {
     name: "Most Used",
     rows,
-    freezePane: "A12",
-    autoFilter: `A11:E${rows.length}`,
+    freezePane: "A13",
+    autoFilter: `A12:E${rows.length}`,
     minColumnWidth: 14,
-    metadataRows: [3, 4, 5, 6, 7, 8],
+    metadataRows: [3, 4, 5, 6, 7, 8, 9],
     titleRow: 1,
-    sectionRows: [10],
-    tableHeaderRows: [11],
+    sectionRows: [11],
+    tableHeaderRows: [12],
     rightAlignedColumns: [2, 3],
   };
 }
@@ -234,6 +240,7 @@ function buildActivitySheet(
     "Unit",
     "From",
     "To",
+    "Used For",
     "Invoice",
     "Vendor",
     "Notes",
@@ -242,6 +249,7 @@ function buildActivitySheet(
   if (data.recentActivity.length === 0) {
     appendRow(rows, [
       "No recent transactions found for this date range",
+      "",
       "",
       "",
       "",
@@ -264,6 +272,7 @@ function buildActivitySheet(
         entry.unit,
         entry.locationFrom,
         entry.locationTo,
+        entry.usedFor,
         entry.invoiceNumber,
         entry.vendorName,
         entry.notes,
@@ -274,13 +283,13 @@ function buildActivitySheet(
   return {
     name: "Activity",
     rows,
-    freezePane: "A12",
-    autoFilter: `A11:K${rows.length}`,
+    freezePane: "A13",
+    autoFilter: `A12:L${rows.length}`,
     minColumnWidth: 12,
-    metadataRows: [3, 4, 5, 6, 7, 8],
+    metadataRows: [3, 4, 5, 6, 7, 8, 9],
     titleRow: 1,
-    sectionRows: [10],
-    tableHeaderRows: [11],
+    sectionRows: [11],
+    tableHeaderRows: [12],
     rightAlignedColumns: [4],
   };
 }
@@ -330,13 +339,13 @@ function buildReversalSheet(
   return {
     name: "Reversals",
     rows,
-    freezePane: "A12",
-    autoFilter: `A11:I${rows.length}`,
+    freezePane: "A13",
+    autoFilter: `A12:I${rows.length}`,
     minColumnWidth: 14,
-    metadataRows: [3, 4, 5, 6, 7, 8],
+    metadataRows: [3, 4, 5, 6, 7, 8, 9],
     titleRow: 1,
-    sectionRows: [10],
-    tableHeaderRows: [11],
+    sectionRows: [11],
+    tableHeaderRows: [12],
     rightAlignedColumns: [5],
   };
 }
@@ -348,6 +357,7 @@ export async function GET(request: Request) {
     endDate: searchParams.get("endDate") ?? undefined,
     jobId: searchParams.get("jobId") ?? undefined,
     materialId: searchParams.get("materialId") ?? undefined,
+    usedFor: normalizeUsedForFilter(searchParams.get("usedFor")),
     timeZoneOffsetMinutes:
       searchParams.get("timeZoneOffsetMinutes") ?? undefined,
     reversalFilter: normalizeReversalFilter(searchParams.get("reversalFilter")),

@@ -1,4 +1,5 @@
 import { getReportsData } from "@/app/actions";
+import { isIssueUsedFor } from "@/lib/issue-usage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -7,6 +8,10 @@ function normalizeReversalFilter(value: string | null) {
   return value === "include" || value === "only" || value === "exclude"
     ? value
     : undefined;
+}
+
+function normalizeUsedForFilter(value: string | null) {
+  return value && isIssueUsedFor(value) ? value : undefined;
 }
 
 type ReportsData = Awaited<ReturnType<typeof getReportsData>>["data"];
@@ -180,6 +185,7 @@ function buildReportLines(data: ReportsData) {
     `Selected Material: ${data.reportMetadata.selectedMaterial ? `${data.reportMetadata.selectedMaterial.sku} — ${data.reportMetadata.selectedMaterial.name}` : "All materials"}`,
   );
   pushWrappedLine(lines, `Reversals: ${data.filters.reversalFilter}`);
+  pushWrappedLine(lines, `Used For: ${data.filters.usedFor ?? "All usage types"}`);
 
   lines.push({ text: "Summary Cards", size: 14, bold: true, gapBefore: 14 });
   pushWrappedLine(
@@ -348,6 +354,7 @@ function buildReportLines(data: ReportsData) {
       });
       pushWrappedLine(lines, `From: ${entry.locationFrom}`, { size: 10 });
       pushWrappedLine(lines, `To: ${entry.locationTo}`, { size: 10 });
+      pushWrappedLine(lines, `Used For: ${entry.usedFor}`, { size: 10 });
       pushWrappedLine(lines, `Invoice: ${entry.invoiceNumber}`, { size: 10 });
       pushWrappedLine(lines, `Vendor: ${entry.vendorName}`, { size: 10 });
       pushWrappedLine(lines, `Notes: ${entry.notes}`, { size: 10 }, 96);
@@ -471,6 +478,7 @@ export async function GET(request: Request) {
     endDate: searchParams.get("endDate") ?? undefined,
     jobId: searchParams.get("jobId") ?? undefined,
     materialId: searchParams.get("materialId") ?? undefined,
+    usedFor: normalizeUsedForFilter(searchParams.get("usedFor")),
     timeZoneOffsetMinutes:
       searchParams.get("timeZoneOffsetMinutes") ?? undefined,
     reversalFilter: normalizeReversalFilter(searchParams.get("reversalFilter")),

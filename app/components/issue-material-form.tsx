@@ -1,6 +1,7 @@
 'use client';
 
 import { JobRecord, MaterialRecord, issueMaterial } from '@/app/actions';
+import { issueUsedForOptions } from '@/lib/issue-usage';
 
 export function IssueMaterialForm({ materials, jobs }: { materials: MaterialRecord[]; jobs: JobRecord[] }) {
   return (
@@ -31,6 +32,16 @@ export function IssueMaterialForm({ materials, jobs }: { materials: MaterialReco
 
       <label htmlFor="quantity">Issue Quantity</label>
       <input id="quantity" name="quantity" type="number" min="1" required />
+
+      <label htmlFor="usedFor">Used For</label>
+      <select id="usedFor" name="usedFor" required>
+        <option value="">Select usage type</option>
+        {issueUsedForOptions.map((usedFor) => (
+          <option key={usedFor} value={usedFor}>
+            {usedFor}
+          </option>
+        ))}
+      </select>
 
       <label htmlFor="notes">Issue Notes</label>
       <textarea id="notes" name="notes" rows={3} placeholder="Work order, station, phase..." />
