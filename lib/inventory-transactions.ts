@@ -111,7 +111,7 @@ export function mapInventoryTransaction(entry: {
       entry.locationFromJob,
     ),
     locationTo:
-      entry.transactionType === "ISSUE"
+      entry.transactionType === "ISSUE" && entry.locationToType !== "JOB"
         ? "Production / Consumption"
         : formatLocationLabel(entry.locationToType, entry.locationToJob),
     invoiceNumber: entry.invoiceNumber ?? "—",

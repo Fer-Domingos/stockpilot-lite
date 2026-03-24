@@ -1629,14 +1629,24 @@ export async function issueMaterial(formData: FormData) {
 
   const materialId = String(formData.get("materialId") ?? "");
   const fromLocation = String(formData.get("fromLocation") ?? "");
+  const issueToInput = String(formData.get("issueTo") ?? "production").trim().toLowerCase();
+  const issueToJobIdInput = String(formData.get("issueToJobId") ?? "").trim();
   const usedForInput = String(formData.get("usedFor") ?? "").trim();
   const notes = String(formData.get("notes") ?? "").trim();
   const quantity = Number(formData.get("quantity") ?? 0);
   const source = parseLocation(fromLocation);
   const usedFor = isIssueUsedFor(usedForInput) ? usedForInput : null;
+  const issueTo = issueToInput === "job" ? "job" : "production";
+  const issueToJobId = issueTo === "job" ? issueToJobIdInput : null;
 
   if (!materialId || !source || !usedFor || !Number.isFinite(quantity) || quantity <= 0) {
     redirect("/issue-materials?error=invalid-issue");
+  }
+
+  if (issueTo === "job") {
+    if (!issueToJobId || source.locationType !== "SHOP") {
+      redirect("/issue-materials?error=invalid-issue");
+    }
   }
 
   const normalizedQuantity = Math.floor(quantity);
@@ -1660,6 +1670,15 @@ export async function issueMaterial(formData: FormData) {
         }
       }
 
+      if (issueTo === "job" && issueToJobId) {
+        const destinationJob = await tx.job.findUnique({
+          where: { id: issueToJobId },
+        });
+        if (!destinationJob || destinationJob.status !== "OPEN") {
+          throw new Error("Destination job must be open.");
+        }
+      }
+
       await adjustInventoryBalance(
         tx,
         materialId,
@@ -1675,8 +1694,8 @@ export async function issueMaterial(formData: FormData) {
           quantity: normalizedQuantity,
           locationFromType: normalizedFromLocation.locationType,
           locationFromJobId: normalizedFromLocation.jobId,
-          locationToType: null,
-          locationToJobId: null,
+          locationToType: issueTo === "job" ? "JOB" : null,
+          locationToJobId: issueTo === "job" ? issueToJobId : null,
           usedFor,
           notes: notes || null,
         },
