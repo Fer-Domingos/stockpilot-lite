@@ -8,6 +8,7 @@ import {
 } from '@/app/actions';
 import { AlertStatusBadge } from '@/app/components/alert-status-badge';
 import { LocalDateTime } from '@/app/components/local-date-time';
+import { ManualPoAlertEmailButton } from '@/app/components/manual-po-alert-email-button';
 import { AppRole } from '@/lib/demo-data';
 import { canManageAlerts } from '@/lib/permissions';
 
@@ -74,6 +75,7 @@ export function AlertsCenter({
             {rows.map((alert) => {
               const canMarkSeen = canUpdateAlerts && alert.status === 'TRIGGERED';
               const canResolve = canUpdateAlerts && (alert.status === 'TRIGGERED' || alert.status === 'SEEN');
+              const canSendManualEmail = role === 'ADMIN' && alert.status !== 'RESOLVED';
               const lastUpdated = alert.lastTriggeredAt ?? alert.createdAt;
 
               return (
@@ -120,7 +122,8 @@ export function AlertsCenter({
                           </button>
                         </form>
                       ) : null}
-                      {!canMarkSeen && !canResolve ? <span className="muted">No action</span> : null}
+                      {canSendManualEmail ? <ManualPoAlertEmailButton alertId={alert.id} /> : null}
+                      {!canMarkSeen && !canResolve && !canSendManualEmail ? <span className="muted">No action</span> : null}
                     </div>
                   </td>
                 </tr>
