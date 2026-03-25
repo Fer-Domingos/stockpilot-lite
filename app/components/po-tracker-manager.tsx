@@ -1,8 +1,17 @@
 'use client';
 
-import { createExpectedPurchaseOrder, ExpectedPurchaseOrderRecord, JobRecord } from '@/app/actions';
+import { useState } from 'react';
+
+import {
+  cancelExpectedPurchaseOrder,
+  createExpectedPurchaseOrder,
+  ExpectedPurchaseOrderRecord,
+  JobRecord,
+  updateExpectedPurchaseOrder
+} from '@/app/actions';
 import { AppRole } from '@/lib/demo-data';
 import { AlertStatusBadge } from '@/app/components/alert-status-badge';
+import { canManageAlerts } from '@/lib/permissions';
 
 export function PoTrackerManager({
   jobs,
@@ -13,6 +22,9 @@ export function PoTrackerManager({
   trackedPurchaseOrders: ExpectedPurchaseOrderRecord[];
   role: AppRole;
 }) {
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const canManagePoAlerts = canManageAlerts(role);
+
   return (
     <>
       <section className="card">
@@ -76,11 +88,78 @@ export function PoTrackerManager({
                     {entry.poNumber}
                     <div className="muted">Normalized: {entry.normalizedPoNumber}</div>
                   </td>
-                  <td>{entry.jobLabel}</td>
-                  <td>{entry.note || '—'}</td>
+                  <td>
+                    {editingId === entry.id ? (
+                      <select name="jobId" defaultValue={entry.jobId ?? ''} form={`edit-po-${entry.id}`}>
+                        <option value="">No related job</option>
+                        {jobs.map((job) => (
+                          <option key={job.id} value={job.id}>
+                            {job.number} — {job.name}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      entry.jobLabel
+                    )}
+                  </td>
+                  <td>
+                    {editingId === entry.id ? (
+                      <textarea
+                        name="note"
+                        rows={2}
+                        defaultValue={entry.note}
+                        form={`edit-po-${entry.id}`}
+                        placeholder="Optional context for this PO tracking entry."
+                      />
+                    ) : (
+                      entry.note || '—'
+                    )}
+                  </td>
                   <td>{entry.lastTriggeredAt ? new Date(entry.lastTriggeredAt).toLocaleString() : '—'}</td>
                   <td>{entry.latestAlertMessage || 'Awaiting matching receipt.'}</td>
-                  <td>{new Date(entry.createdAt).toLocaleString()}</td>
+                  <td>
+                    {new Date(entry.createdAt).toLocaleString()}
+                    <div className="row-actions" style={{ marginTop: '0.5rem' }}>
+                      {canManagePoAlerts && entry.status === 'OPEN' ? (
+                        editingId === entry.id ? (
+                          <>
+                            <form className="inline-form" id={`edit-po-${entry.id}`} action={updateExpectedPurchaseOrder}>
+                              <input type="hidden" name="expectedPoId" value={entry.id} />
+                              <input type="hidden" name="role" value={role} />
+                              <input name="poNumber" required defaultValue={entry.poNumber} />
+                              <button className="secondary-button" type="submit">
+                                Save Edit
+                              </button>
+                            </form>
+                            <button className="tertiary-button" type="button" onClick={() => setEditingId(null)}>
+                              Cancel Edit
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button className="secondary-button" type="button" onClick={() => setEditingId(entry.id)}>
+                              Edit
+                            </button>
+                            <form className="inline-form" action={cancelExpectedPurchaseOrder}>
+                              <input type="hidden" name="expectedPoId" value={entry.id} />
+                              <input type="hidden" name="role" value={role} />
+                              <button
+                                className="danger-button"
+                                type="submit"
+                                onClick={(event) => {
+                                  if (!window.confirm('Cancel this PO alert? This keeps history but stops matching.')) {
+                                    event.preventDefault();
+                                  }
+                                }}
+                              >
+                                Cancel
+                              </button>
+                            </form>
+                          </>
+                        )
+                      ) : null}
+                    </div>
+                  </td>
                 </tr>
               ))
             )}

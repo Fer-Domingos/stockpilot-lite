@@ -4,7 +4,8 @@ const statusLabels: Record<AlertStatus, string> = {
   OPEN: 'Open',
   TRIGGERED: 'Triggered',
   SEEN: 'Seen',
-  RESOLVED: 'Resolved'
+  RESOLVED: 'Resolved',
+  CANCELLED: 'Cancelled'
 };
 
 export function AlertStatusBadge({ status }: { status: AlertStatus }) {

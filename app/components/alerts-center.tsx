@@ -32,7 +32,7 @@ export function AlertsCenter({
   emptyMessage?: string;
   showTriggeredNotifications?: boolean;
 }) {
-  const activeAlerts = trackedPurchaseOrders.filter((alert) => alert.status !== 'RESOLVED');
+  const activeAlerts = trackedPurchaseOrders.filter((alert) => alert.status !== 'RESOLVED' && alert.status !== 'CANCELLED');
   const canUpdateAlerts = canManageAlerts(role);
   const rows = compact ? activeAlerts.slice(0, 6) : trackedPurchaseOrders;
   const heading = title ?? (compact ? 'Alerts Requiring Attention' : 'Alerts / Notifications');
