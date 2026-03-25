@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useFormState, useFormStatus } from 'react-dom';
 
-import { PasswordGuidance } from '@/app/components/password-guidance';
 import { createUserAction, type UserManagementResult } from '@/app/users/actions';
 
 const initialState: UserManagementResult = { ok: false };
@@ -18,11 +17,17 @@ export function CreateUserForm() {
   const [state, formAction] = useFormState(createUserAction, initialState);
   const formRef = useRef<HTMLFormElement>(null);
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+
+  const passwordHint = password.length > 0 && password.length < 8
+    ? 'Password must be at least 8 characters'
+    : 'Use 12+ characters for a stronger password';
 
   useEffect(() => {
     if (state.ok) {
       formRef.current?.reset();
       setPassword('');
+      setShowPassword(false);
     }
   }, [state.ok]);
 
@@ -36,27 +41,39 @@ export function CreateUserForm() {
       </div>
 
       <form action={formAction} ref={formRef} className="user-form-grid">
-        <div>
+        <div className="user-form-field">
           <label htmlFor="name">Name</label>
           <input id="name" name="name" type="text" required />
         </div>
-        <div>
+        <div className="user-form-field">
           <label htmlFor="email">Email</label>
           <input id="email" name="email" type="email" required />
         </div>
-        <div>
+        <div className="user-form-field user-password-field">
           <label htmlFor="password">Password</label>
-          <input
-            id="password"
-            name="password"
-            type="password"
-            minLength={8}
-            onChange={(event) => setPassword(event.target.value)}
-            required
-          />
-          <PasswordGuidance password={password} />
+          <p className={`field-helper-text ${password.length > 0 && password.length < 8 ? 'field-helper-text-error' : ''}`} aria-live="polite">
+            {passwordHint}
+          </p>
+          <div className="password-input-wrap">
+            <input
+              id="password"
+              name="password"
+              type={showPassword ? 'text' : 'password'}
+              minLength={8}
+              onChange={(event) => setPassword(event.target.value)}
+              required
+            />
+            <button
+              type="button"
+              className="password-toggle-button"
+              onClick={() => setShowPassword((current) => !current)}
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+            >
+              {showPassword ? 'Hide' : 'Show'}
+            </button>
+          </div>
         </div>
-        <div>
+        <div className="user-form-field">
           <label htmlFor="role">Role</label>
           <select id="role" name="role" defaultValue="PM">
             <option value="PM">PM</option>
