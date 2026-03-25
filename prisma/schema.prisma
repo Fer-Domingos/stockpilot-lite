@@ -200,6 +200,7 @@ enum PurchaseOrderAlertStatus {
   TRIGGERED
   SEEN
   RESOLVED
+  CANCELLED
 }
 
 

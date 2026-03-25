@@ -1,0 +1,1 @@
+ALTER TYPE "PurchaseOrderAlertStatus" ADD VALUE IF NOT EXISTS 'CANCELLED';

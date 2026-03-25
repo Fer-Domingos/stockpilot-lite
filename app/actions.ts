@@ -38,7 +38,7 @@ export type JobRecord = {
   status: JobStatus;
 };
 
-export type AlertStatus = "OPEN" | "TRIGGERED" | "SEEN" | "RESOLVED";
+export type AlertStatus = "OPEN" | "TRIGGERED" | "SEEN" | "RESOLVED" | "CANCELLED";
 
 export type ExpectedPurchaseOrderRecord = {
   id: string;
@@ -354,7 +354,7 @@ async function updateTrackedPurchaseOrderStatus(
       where: {
         expectedPoId,
         status: {
-          not: "RESOLVED",
+          notIn: ["RESOLVED", "CANCELLED"],
         },
       },
       data: {
@@ -372,6 +372,31 @@ async function updateTrackedPurchaseOrderStatus(
   revalidatePath("/dashboard");
   revalidatePath("/po-alerts");
   revalidatePath("/receive-materials");
+}
+
+async function findTrackedPoForMutation(expectedPoId: string, role: AppRole) {
+  const currentUser = await getCurrentSessionUser();
+  const trackedPo = await prisma.expectedPurchaseOrder.findUnique({
+    where: { id: expectedPoId },
+    select: {
+      id: true,
+      ownerId: true,
+      status: true,
+    },
+  });
+
+  if (!trackedPo) {
+    return null;
+  }
+
+  if (
+    role === "PM" &&
+    (!currentUser || !trackedPo.ownerId || trackedPo.ownerId !== currentUser.id)
+  ) {
+    return null;
+  }
+
+  return trackedPo;
 }
 
 function formatExpectedPoMutationError(error: unknown): string {
@@ -1095,6 +1120,109 @@ export async function createExpectedPurchaseOrder(formData: FormData) {
   redirect("/po-alerts?success=1");
 }
 
+export async function updateExpectedPurchaseOrder(formData: FormData) {
+  await requireRole("ADMIN", "PM");
+
+  const expectedPoId = String(formData.get("expectedPoId") ?? "").trim();
+  const poNumber = String(formData.get("poNumber") ?? "").trim();
+  const normalizedPoNumber = normalizeTrackedPoNumber(poNumber);
+  const jobIdValue = String(formData.get("jobId") ?? "").trim();
+  const note = String(formData.get("note") ?? "").trim();
+  const jobId = jobIdValue || null;
+  const role = await getCurrentRole();
+
+  if (!expectedPoId || !poNumber) {
+    redirect("/po-alerts?error=missing-po-number");
+  }
+
+  const trackedPo = await findTrackedPoForMutation(expectedPoId, role);
+
+  if (!trackedPo || trackedPo.status !== "OPEN") {
+    redirect("/po-alerts?error=edit-not-allowed");
+  }
+
+  if (jobId) {
+    const job = await prisma.job.findUnique({
+      where: { id: jobId },
+      select: { id: true },
+    });
+
+    if (!job) {
+      redirect("/po-alerts?error=invalid-job");
+    }
+  }
+
+  try {
+    await prisma.expectedPurchaseOrder.update({
+      where: { id: trackedPo.id },
+      data: {
+        poNumber,
+        normalizedPoNumber,
+        jobId,
+        note: note || null,
+      },
+    });
+  } catch (error) {
+    console.error("Failed to update tracked PO:", error);
+    redirect(
+      `/po-alerts?error=save-failed&message=${encodeURIComponent(formatExpectedPoMutationError(error))}`,
+    );
+  }
+
+  revalidatePath("/po-alerts");
+  revalidatePath("/alerts");
+  revalidatePath("/dashboard");
+  revalidatePath("/receive-materials");
+  redirect("/po-alerts?success=updated");
+}
+
+export async function cancelExpectedPurchaseOrder(formData: FormData) {
+  await requireRole("ADMIN", "PM");
+
+  const expectedPoId = String(formData.get("expectedPoId") ?? "").trim();
+  const role = await getCurrentRole();
+
+  if (!expectedPoId) {
+    redirect("/po-alerts?error=cancel-not-allowed");
+  }
+
+  const trackedPo = await findTrackedPoForMutation(expectedPoId, role);
+
+  if (!trackedPo || trackedPo.status !== "OPEN") {
+    redirect("/po-alerts?error=cancel-not-allowed");
+  }
+
+  const now = new Date();
+  await prisma.$transaction(async (tx) => {
+    await tx.expectedPurchaseOrder.update({
+      where: { id: trackedPo.id },
+      data: {
+        status: "CANCELLED",
+        resolvedAt: now,
+      },
+    });
+
+    await tx.purchaseOrderAlert.updateMany({
+      where: {
+        expectedPoId: trackedPo.id,
+        status: {
+          notIn: ["RESOLVED", "CANCELLED"],
+        },
+      },
+      data: {
+        status: "CANCELLED",
+        resolvedAt: now,
+      },
+    });
+  });
+
+  revalidatePath("/po-alerts");
+  revalidatePath("/alerts");
+  revalidatePath("/dashboard");
+  revalidatePath("/receive-materials");
+  redirect("/po-alerts?success=cancelled");
+}
+
 export async function markPurchaseOrderAlertSeen(formData: FormData) {
   await requireRole("ADMIN", "PM");
 
@@ -1323,9 +1451,12 @@ export async function receiveMaterial(formData: FormData) {
         },
       });
 
-      const matchedExpectedPo = await tx.expectedPurchaseOrder.findUnique({
+      const matchedExpectedPo = await tx.expectedPurchaseOrder.findFirst({
         where: {
           normalizedPoNumber: normalizeTrackedPoNumber(invoiceNumber),
+          status: {
+            not: "CANCELLED",
+          },
         },
         include: {
           job: {
