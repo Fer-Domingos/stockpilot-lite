@@ -11,6 +11,7 @@ import {
 } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
+import { sendPurchaseOrderAlertEmail } from "@/lib/po-alert-email";
 import {
   listInventoryTransactions as listInventoryTransactionsQuery,
   type InventoryTransactionView,
@@ -1123,6 +1124,80 @@ export async function markPurchaseOrderAlertResolved(formData: FormData) {
   await updateTrackedPurchaseOrderStatus(expectedPoId, "RESOLVED", role);
 
   redirect(`/alerts?role=${encodeURIComponent(role)}&success=resolved`);
+}
+
+export async function sendManualPOAlertEmail(
+  alertId: string,
+): Promise<ActionResult> {
+  try {
+    await requireRole("ADMIN");
+
+    const normalizedAlertId = alertId.trim();
+    if (!normalizedAlertId) {
+      return { ok: false, error: "Alert not found." };
+    }
+
+    const expectedPo = await prisma.expectedPurchaseOrder.findUnique({
+      where: { id: normalizedAlertId },
+      include: {
+        owner: {
+          select: { email: true },
+        },
+        job: {
+          select: { number: true, name: true },
+        },
+        alerts: {
+          orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+          take: 1,
+          include: {
+            receivingRecord: {
+              include: {
+                material: {
+                  select: {
+                    name: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!expectedPo) {
+      return { ok: false, error: "Alert not found." };
+    }
+
+    const ownerEmail = expectedPo.owner?.email?.trim();
+    if (!ownerEmail) {
+      return { ok: false, error: "Alert owner email is missing." };
+    }
+
+    const latestAlert = expectedPo.alerts[0];
+    const relatedJob = expectedPo.job
+      ? `${expectedPo.job.number} — ${expectedPo.job.name}`
+      : "No related job";
+    const sent = await sendPurchaseOrderAlertEmail({
+      ownerEmail,
+      poNumber: expectedPo.poNumber,
+      invoiceNumber: latestAlert?.receivingRecord.invoiceNumber ?? null,
+      relatedJob,
+      materialName: latestAlert?.receivingRecord.material.name ?? "Unknown",
+      quantity: latestAlert?.receivingRecord.quantity ?? null,
+      message:
+        latestAlert?.message ??
+        `Tracked PO ${expectedPo.poNumber} was manually emailed.`,
+    });
+
+    if (!sent) {
+      return { ok: false, error: "Failed to send email." };
+    }
+
+    return { ok: true };
+  } catch (error) {
+    console.error("Failed to send manual PO alert email:", { alertId, error });
+    return { ok: false, error: "Failed to send email." };
+  }
 }
 
 export async function listPurchaseOrderAlerts(
