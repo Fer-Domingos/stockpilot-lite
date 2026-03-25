@@ -18,6 +18,7 @@ import {
 import { authConfig, decodeSession } from "@/lib/session";
 import { AppRole } from "@/lib/demo-data";
 import { isIssueUsedFor, issueUsedForOptions, type IssueUsedFor } from "@/lib/issue-usage";
+import { sendPurchaseOrderAlertEmail } from "@/lib/po-alert-email";
 
 export type MaterialRecord = {
   id: string;
@@ -1272,10 +1273,23 @@ export async function receiveMaterial(formData: FormData) {
 
   const normalizedQuantity = Math.floor(quantity);
   const receivedAt = new Date();
+  const pendingPoAlertEmails: Array<{
+    eventKey: string;
+    ownerEmail: string;
+    poNumber: string;
+    invoiceNumber: string;
+    relatedJobLabel: string | null;
+    materialLabel: string | null;
+    quantity: number;
+  }> = [];
 
   const material = await prisma.material.findUnique({
     where: { id: materialId },
-    select: { id: true },
+    select: {
+      id: true,
+      name: true,
+      sku: true,
+    },
   });
 
   if (!material) {
@@ -1334,6 +1348,11 @@ export async function receiveMaterial(formData: FormData) {
               name: true,
             },
           },
+          owner: {
+            select: {
+              email: true,
+            },
+          },
         },
       });
 
@@ -1353,7 +1372,7 @@ export async function receiveMaterial(formData: FormData) {
         });
 
         if (openNotification) {
-          await tx.purchaseOrderAlert.update({
+          const updatedAlert = await tx.purchaseOrderAlert.update({
             where: { id: openNotification.id },
             data: {
               receivingRecordId: receipt.id,
@@ -1367,8 +1386,22 @@ export async function receiveMaterial(formData: FormData) {
               },
             },
           });
+
+          if (matchedExpectedPo.owner?.email) {
+            pendingPoAlertEmails.push({
+              eventKey: `${updatedAlert.expectedPoId}:${updatedAlert.receivingRecordId}`,
+              ownerEmail: matchedExpectedPo.owner.email,
+              poNumber: matchedExpectedPo.poNumber,
+              invoiceNumber: receipt.invoiceNumber ?? matchedExpectedPo.poNumber,
+              relatedJobLabel: matchedExpectedPo.job
+                ? `${matchedExpectedPo.job.number} — ${matchedExpectedPo.job.name}`
+                : null,
+              materialLabel: `${material.sku} — ${material.name}`,
+              quantity: normalizedQuantity,
+            });
+          }
         } else {
-          await tx.purchaseOrderAlert.create({
+          const createdAlert = await tx.purchaseOrderAlert.create({
             data: {
               expectedPoId: matchedExpectedPo.id,
               receivingRecordId: receipt.id,
@@ -1378,6 +1411,20 @@ export async function receiveMaterial(formData: FormData) {
               triggerCount: 1,
             },
           });
+
+          if (matchedExpectedPo.owner?.email) {
+            pendingPoAlertEmails.push({
+              eventKey: `${createdAlert.expectedPoId}:${createdAlert.receivingRecordId}`,
+              ownerEmail: matchedExpectedPo.owner.email,
+              poNumber: matchedExpectedPo.poNumber,
+              invoiceNumber: receipt.invoiceNumber ?? matchedExpectedPo.poNumber,
+              relatedJobLabel: matchedExpectedPo.job
+                ? `${matchedExpectedPo.job.number} — ${matchedExpectedPo.job.name}`
+                : null,
+              materialLabel: `${material.sku} — ${material.name}`,
+              quantity: normalizedQuantity,
+            });
+          }
         }
 
         await tx.purchaseOrderAlert.updateMany({
@@ -1437,6 +1484,33 @@ export async function receiveMaterial(formData: FormData) {
         },
       });
     });
+
+    const sentEventKeys = new Set<string>();
+    for (const emailPayload of pendingPoAlertEmails) {
+      if (sentEventKeys.has(emailPayload.eventKey)) {
+        continue;
+      }
+
+      sentEventKeys.add(emailPayload.eventKey);
+      try {
+        await sendPurchaseOrderAlertEmail({
+          ownerEmail: emailPayload.ownerEmail,
+          poNumber: emailPayload.poNumber,
+          invoiceNumber: emailPayload.invoiceNumber,
+          relatedJobLabel: emailPayload.relatedJobLabel,
+          materialLabel: emailPayload.materialLabel,
+          quantity: emailPayload.quantity,
+        });
+      } catch (error) {
+        console.error("Failed to send PO alert email:", {
+          ownerEmail: emailPayload.ownerEmail,
+          poNumber: emailPayload.poNumber,
+          invoiceNumber: emailPayload.invoiceNumber,
+          eventKey: emailPayload.eventKey,
+          error,
+        });
+      }
+    }
 
     await syncMaterialQuantitiesFromBalances();
   } catch (error) {
