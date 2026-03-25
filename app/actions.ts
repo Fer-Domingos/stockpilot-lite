@@ -217,6 +217,11 @@ type ActionResult<T = undefined> = {
 
 type MaterialPayload = Omit<MaterialRecord, "id" | "quantity">;
 type JobPayload = Omit<JobRecord, "id">;
+type ExpectedPurchaseOrderPayload = {
+  poNumber: string;
+  jobId: string | null;
+  note: string;
+};
 
 type ParsedLocation = {
   locationType: InventoryLocationType;
@@ -1093,6 +1098,121 @@ export async function createExpectedPurchaseOrder(formData: FormData) {
   revalidatePath("/dashboard");
   revalidatePath("/receive-materials");
   redirect("/po-alerts?success=1");
+}
+
+export async function updateExpectedPurchaseOrder(
+  id: string,
+  payload: ExpectedPurchaseOrderPayload,
+): Promise<ActionResult<ExpectedPurchaseOrderRecord>> {
+  try {
+    await requireRole("ADMIN", "PM");
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Unauthorized.",
+    };
+  }
+
+  const poNumber = payload.poNumber.trim();
+  const normalizedPoNumber = normalizeTrackedPoNumber(poNumber);
+  const note = payload.note.trim();
+  const jobId = payload.jobId?.trim() || null;
+
+  if (!poNumber) {
+    return { ok: false, error: "PO number is required." };
+  }
+
+  if (jobId) {
+    const job = await prisma.job.findUnique({
+      where: { id: jobId },
+      select: { id: true },
+    });
+
+    if (!job) {
+      return { ok: false, error: "Selected related job was not found." };
+    }
+  }
+
+  try {
+    const updated = await prisma.expectedPurchaseOrder.update({
+      where: { id },
+      data: {
+        poNumber,
+        normalizedPoNumber,
+        jobId,
+        note: note || null,
+      },
+      include: {
+        job: {
+          select: {
+            number: true,
+            name: true,
+          },
+        },
+        owner: {
+          select: {
+            email: true,
+          },
+        },
+        alerts: {
+          include: {
+            receivingRecord: {
+              include: {
+                material: {
+                  select: {
+                    name: true,
+                    sku: true,
+                  },
+                },
+              },
+            },
+          },
+          orderBy: { createdAt: "desc" },
+          take: 1,
+        },
+      },
+    });
+
+    revalidatePath("/po-alerts");
+    revalidatePath("/alerts");
+    revalidatePath("/dashboard");
+    revalidatePath("/receive-materials");
+
+    return {
+      ok: true,
+      data: {
+        id: updated.id,
+        ownerId: updated.ownerId,
+        ownerEmail: updated.owner?.email ?? "Unknown",
+        poNumber: updated.poNumber,
+        normalizedPoNumber: updated.normalizedPoNumber,
+        jobId: updated.jobId,
+        jobLabel: updated.job
+          ? `${updated.job.number} — ${updated.job.name}`
+          : "—",
+        note: updated.note ?? "",
+        status: serializeAlertStatus(updated.status),
+        createdAt: updated.createdAt.toISOString(),
+        updatedAt: updated.updatedAt.toISOString(),
+        lastTriggeredAt: updated.lastTriggeredAt?.toISOString() ?? null,
+        seenAt: updated.seenAt?.toISOString() ?? null,
+        resolvedAt: updated.resolvedAt?.toISOString() ?? null,
+        triggerCount: updated.triggerCount,
+        latestAlertId: updated.alerts[0]?.id ?? null,
+        latestAlertMessage: updated.alerts[0]?.message ?? "",
+        latestAlertReceiptId: updated.alerts[0]?.receivingRecordId ?? null,
+        latestAlertInvoiceNumber:
+          updated.alerts[0]?.receivingRecord.invoiceNumber ?? "—",
+        latestAlertMaterialName:
+          updated.alerts[0]?.receivingRecord.material.name ?? "—",
+        latestAlertMaterialSku:
+          updated.alerts[0]?.receivingRecord.material.sku ?? "—",
+      },
+    };
+  } catch (error) {
+    console.error("Failed to update tracked PO:", error);
+    return { ok: false, error: formatExpectedPoMutationError(error) };
+  }
 }
 
 export async function markPurchaseOrderAlertSeen(formData: FormData) {
