@@ -18,6 +18,7 @@ import {
 import { authConfig, decodeSession } from "@/lib/session";
 import { AppRole } from "@/lib/demo-data";
 import { isIssueUsedFor, issueUsedForOptions, type IssueUsedFor } from "@/lib/issue-usage";
+import { parseXlsxRows } from "@/lib/xlsx";
 
 export type MaterialRecord = {
   id: string;
@@ -36,6 +37,14 @@ export type JobRecord = {
   number: string;
   name: string;
   status: JobStatus;
+};
+
+export type JobImportSummary = {
+  totalRowsRead: number;
+  imported: number;
+  skippedDuplicates: number;
+  invalidRows: number;
+  errors: string[];
 };
 
 export type AlertStatus = "OPEN" | "TRIGGERED" | "SEEN" | "RESOLVED";
@@ -945,6 +954,141 @@ export async function deleteJob(id: string): Promise<ActionResult> {
   } catch (error) {
     console.error("Failed to delete job:", error);
     return { ok: false, error: "Unable to delete job right now." };
+  }
+}
+
+export async function importJobsFromExcel(
+  file: File,
+): Promise<ActionResult<JobImportSummary & { jobs: JobRecord[] }>> {
+  try {
+    await requireRole("ADMIN");
+
+    if (!(file instanceof File)) {
+      return { ok: false, error: "Please choose an XLSX file to import." };
+    }
+
+    if (!file.name.toLowerCase().endsWith(".xlsx")) {
+      return { ok: false, error: "Only .xlsx files are supported." };
+    }
+
+    const parseResult = parseXlsxRows(Buffer.from(await file.arrayBuffer()));
+    if (parseResult.error) {
+      return { ok: false, error: parseResult.error };
+    }
+
+    const [headerRow = [], ...dataRows] = parseResult.rows;
+    const normalizedHeaders = headerRow.map((header) =>
+      header.trim().toLowerCase(),
+    );
+    const numberIndex = normalizedHeaders.findIndex((header) =>
+      ["job number", "number", "job #", "job no", "job no."].includes(header),
+    );
+    const nameIndex = normalizedHeaders.findIndex((header) =>
+      ["job name", "name"].includes(header),
+    );
+    const statusIndex = normalizedHeaders.findIndex((header) =>
+      ["status", "job status"].includes(header),
+    );
+
+    if (numberIndex < 0 || nameIndex < 0) {
+      return {
+        ok: false,
+        error:
+          "Header row must include at least Job Number and Job Name columns.",
+      };
+    }
+
+    const errors: string[] = [];
+    let invalidRows = 0;
+    let skippedDuplicates = 0;
+    let imported = 0;
+    const dedupeInFile = new Set<string>();
+    const candidates: Array<{ number: string; name: string; status: JobStatus }> =
+      [];
+
+    dataRows.forEach((rawRow, rowIndex) => {
+      const excelRow = rowIndex + 2;
+      const number = (rawRow[numberIndex] ?? "").trim();
+      const name = (rawRow[nameIndex] ?? "").trim();
+      const statusRaw = (statusIndex >= 0 ? rawRow[statusIndex] : "OPEN") ?? "";
+      const statusText = statusRaw.trim().toUpperCase();
+      const normalizedStatus: JobStatus =
+        statusText === "CLOSED" ? "CLOSED" : "OPEN";
+
+      if (!number && !name && !statusText) {
+        return;
+      }
+
+      if (!number || !name) {
+        invalidRows += 1;
+        errors.push(`Row ${excelRow}: missing Job Number or Job Name.`);
+        return;
+      }
+
+      if (statusText && statusText !== "OPEN" && statusText !== "CLOSED") {
+        invalidRows += 1;
+        errors.push(`Row ${excelRow}: invalid status "${statusRaw}".`);
+        return;
+      }
+
+      const duplicateKey = number.toLowerCase();
+      if (dedupeInFile.has(duplicateKey)) {
+        skippedDuplicates += 1;
+        return;
+      }
+      dedupeInFile.add(duplicateKey);
+      candidates.push({ number, name, status: normalizedStatus });
+    });
+
+    if (candidates.length > 0) {
+      const existing = await prisma.job.findMany({
+        where: {
+          number: {
+            in: candidates.map((candidate) => candidate.number),
+          },
+        },
+        select: { number: true },
+      });
+      const existingNumbers = new Set(
+        existing.map((row) => row.number.toLowerCase()),
+      );
+      const toCreate = candidates.filter((candidate) => {
+        if (existingNumbers.has(candidate.number.toLowerCase())) {
+          skippedDuplicates += 1;
+          return false;
+        }
+
+        return true;
+      });
+
+      if (toCreate.length > 0) {
+        const created = await prisma.job.createMany({
+          data: toCreate,
+          skipDuplicates: true,
+        });
+        imported += created.count;
+      }
+    }
+
+    const jobs = await listJobs();
+    revalidatePath("/jobs");
+
+    return {
+      ok: true,
+      data: {
+        totalRowsRead: dataRows.filter((row) =>
+          row.some((value) => (value ?? "").trim().length > 0),
+        ).length,
+        imported,
+        skippedDuplicates,
+        invalidRows,
+        errors,
+        jobs: jobs.data,
+      },
+    };
+  } catch (error) {
+    console.error("Failed to import jobs from XLSX:", error);
+    return { ok: false, error: "Unable to import jobs right now." };
   }
 }
 
