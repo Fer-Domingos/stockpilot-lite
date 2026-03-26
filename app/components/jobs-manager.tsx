@@ -1,10 +1,22 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useRef, useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
 
-import { JobRecord, JobStatus, createJob, deleteJob, updateJob } from '@/app/actions';
+import * as actions from '@/app/actions';
+import type { JobRecord, JobStatus } from '@/app/actions';
 import { AppRole } from '@/lib/demo-data';
 import { canManageInventory } from '@/lib/permissions';
+
+const { createJob, deleteJob, updateJob } = actions;
+
+type ImportJobsResult = {
+  createdCount: number;
+  updatedCount: number;
+  skippedCount: number;
+  errorCount?: number;
+  message?: string;
+};
 
 type JobFormState = Omit<JobRecord, 'id'>;
 
@@ -23,10 +35,14 @@ export function JobsManager({
   initialJobs: JobRecord[];
   role: AppRole;
 }) {
+  const router = useRouter();
   const [jobs, setJobs] = useState<JobRecord[]>(initialJobs);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<JobFormState>(emptyForm);
   const [error, setError] = useState('');
+  const [importError, setImportError] = useState('');
+  const [importSummary, setImportSummary] = useState<ImportJobsResult | null>(null);
+  const importFormRef = useRef<HTMLFormElement>(null);
   const [isPending, startTransition] = useTransition();
   const isReadOnly = !canManageInventory(role);
 
@@ -133,6 +149,90 @@ export function JobsManager({
 
             <button type="submit" disabled={isPending}>
               {isPending ? 'Saving...' : editingId ? 'Save Job' : 'Add Job'}
+            </button>
+          </form>
+        </section>
+      ) : null}
+      {!isReadOnly ? (
+        <section className="card">
+          <div className="section-title">
+            <h3>Import Jobs (.xlsx)</h3>
+          </div>
+          <p className="muted">Upload an Excel workbook to add or update jobs in bulk.</p>
+          {!!importError ? <p className="muted">{importError}</p> : null}
+          {importSummary ? (
+            <p className="muted">
+              Import complete. Created: {importSummary.createdCount}, Updated: {importSummary.updatedCount}, Skipped:{' '}
+              {importSummary.skippedCount}
+              {typeof importSummary.errorCount === 'number' ? `, Errors: ${importSummary.errorCount}` : ''}
+              {importSummary.message ? ` — ${importSummary.message}` : ''}
+            </p>
+          ) : null}
+          <form
+            ref={importFormRef}
+            onSubmit={(event) => {
+              event.preventDefault();
+              setImportError('');
+              setImportSummary(null);
+
+              const formData = new FormData(event.currentTarget);
+              const fileEntry = formData.get('jobsFile');
+              const file = fileEntry instanceof File ? fileEntry : null;
+
+              if (!file || !file.name) {
+                setImportError('Please choose an .xlsx file to import.');
+                return;
+              }
+
+              if (!file.name.toLowerCase().endsWith('.xlsx')) {
+                setImportError('Only .xlsx files are supported.');
+                return;
+              }
+
+              startTransition(async () => {
+                try {
+                  const importedActions = await import('@/app/actions');
+                  const importJobsFromExcel = (
+                    importedActions as {
+                      importJobsFromExcel?: (
+                        file: File,
+                      ) => Promise<{ ok: boolean; error?: string; data?: ImportJobsResult }>;
+                    }
+                  ).importJobsFromExcel;
+
+                  if (!importJobsFromExcel) {
+                    setImportError('Job import is currently unavailable. Please contact support.');
+                    return;
+                  }
+
+                  const result = await importJobsFromExcel(file);
+
+                  if (!result.ok) {
+                    setImportError(result.error ?? 'Import failed. Please verify the file and try again.');
+                    return;
+                  }
+
+                  setImportSummary(
+                    result.data ?? {
+                      createdCount: 0,
+                      updatedCount: 0,
+                      skippedCount: 0,
+                      message: 'Import finished.',
+                    },
+                  );
+                  importFormRef.current?.reset();
+                  router.refresh();
+                } catch (caughtError) {
+                  console.error('Failed to import jobs from Excel:', caughtError);
+                  setImportError('Unexpected import error. Please try again.');
+                }
+              });
+            }}
+          >
+            <label htmlFor="jobsFile">Excel file</label>
+            <input id="jobsFile" name="jobsFile" type="file" accept=".xlsx" required />
+            <button type="submit" disabled={isPending}>
+              {isPending ? 'Importing...' : 'Import Jobs'}
             </button>
           </form>
         </section>
