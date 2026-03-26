@@ -18,6 +18,7 @@ import {
 import { authConfig, decodeSession } from "@/lib/session";
 import { AppRole } from "@/lib/demo-data";
 import { isIssueUsedFor, issueUsedForOptions, type IssueUsedFor } from "@/lib/issue-usage";
+import { parseXlsxRows } from "@/lib/xlsx-import";
 
 export type MaterialRecord = {
   id: string;
@@ -217,6 +218,13 @@ type ActionResult<T = undefined> = {
 
 type MaterialPayload = Omit<MaterialRecord, "id" | "quantity">;
 type JobPayload = Omit<JobRecord, "id">;
+type JobImportSummary = {
+  totalRowsRead: number;
+  imported: number;
+  skippedDuplicates: number;
+  invalidRows: number;
+  errors: string[];
+};
 
 type ParsedLocation = {
   locationType: InventoryLocationType;
@@ -945,6 +953,113 @@ export async function deleteJob(id: string): Promise<ActionResult> {
   } catch (error) {
     console.error("Failed to delete job:", error);
     return { ok: false, error: "Unable to delete job right now." };
+  }
+}
+
+function normalizeJobImportCell(value: unknown): string {
+  if (typeof value === "string") {
+    return value.trim();
+  }
+
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value).trim();
+  }
+
+  return "";
+}
+
+function findJobImportColumnKey(
+  row: Record<string, unknown>,
+  target: "job number" | "job name",
+) {
+  return Object.keys(row).find((key) => key.trim().toLowerCase() === target);
+}
+
+export async function importJobsFromExcel(
+  file: File,
+): Promise<ActionResult<JobImportSummary>> {
+  try {
+    await requireRole("ADMIN");
+
+    if (!file || file.size === 0) {
+      return { ok: false, error: "Please upload a non-empty .xlsx file." };
+    }
+
+    if (!file.name.toLowerCase().endsWith(".xlsx")) {
+      return { ok: false, error: "Only .xlsx files are supported." };
+    }
+
+    const fileBuffer = Buffer.from(await file.arrayBuffer());
+    const rows = parseXlsxRows(fileBuffer);
+
+    const summary: JobImportSummary = {
+      totalRowsRead: rows.length,
+      imported: 0,
+      skippedDuplicates: 0,
+      invalidRows: 0,
+      errors: [],
+    };
+
+    const existingJobs = await prisma.job.findMany({
+      select: { number: true },
+    });
+    const seenJobNumbers = new Set(
+      existingJobs.map((job) => job.number.trim().toLowerCase()),
+    );
+
+    const firstRow = rows[0];
+    const jobNumberKey = firstRow
+      ? findJobImportColumnKey(firstRow, "job number")
+      : "Job Number";
+    const jobNameKey = firstRow ? findJobImportColumnKey(firstRow, "job name") : "Job Name";
+
+    if (!jobNumberKey || !jobNameKey) {
+      return {
+        ok: false,
+        error: 'Missing required columns. Expected headers: "Job Number" and "Job Name".',
+      };
+    }
+
+    for (const [index, row] of rows.entries()) {
+
+      const number = normalizeJobImportCell(row[jobNumberKey]);
+      const name = normalizeJobImportCell(row[jobNameKey]);
+
+      if (!number || !name) {
+        summary.invalidRows += 1;
+        summary.errors.push(
+          `Row ${index + 2}: missing required Job Number or Job Name.`,
+        );
+        continue;
+      }
+
+      const normalizedNumber = number.toLowerCase();
+      if (seenJobNumbers.has(normalizedNumber)) {
+        summary.skippedDuplicates += 1;
+        continue;
+      }
+
+      try {
+        await prisma.job.create({
+          data: {
+            number,
+            name,
+            status: "OPEN",
+          },
+        });
+        seenJobNumbers.add(normalizedNumber);
+        summary.imported += 1;
+      } catch (error) {
+        summary.errors.push(`Row ${index + 2}: failed to import this job.`);
+        console.error("Job import row failed:", error);
+      }
+    }
+
+    revalidatePath("/jobs");
+    return { ok: true, data: summary };
+  } catch (error) {
+    console.error("Failed to import jobs:", error);
+    return { ok: false, error: "Unable to import jobs right now." };
   }
 }
 
