@@ -1,6 +1,7 @@
 import { AlertsCenter } from '@/app/components/alerts-center';
 import { AppShell } from '@/app/components/app-shell';
 import { listExpectedPurchaseOrders, listPurchaseOrderAlerts } from '@/app/actions';
+import { isActiveAlertStatus } from '@/lib/alert-status';
 import { getRole } from '@/lib/role';
 
 const successMessages: Record<string, string> = {
@@ -26,7 +27,7 @@ export default async function AlertsPage({
   const successMessage = searchParams.success ? successMessages[searchParams.success] ?? null : null;
   const errorMessage = searchParams.error ? errorMessages[searchParams.error] ?? 'Unable to update alert.' : null;
 
-  const activeAlerts = trackedPurchaseOrders.filter((alert) => alert.status === 'OPEN' || alert.status === 'TRIGGERED');
+  const activeAlerts = trackedPurchaseOrders.filter((alert) => isActiveAlertStatus(alert.status));
   const seenAlerts = trackedPurchaseOrders.filter((alert) => alert.status === 'SEEN');
   const resolvedAlerts = trackedPurchaseOrders.filter((alert) => alert.status === 'RESOLVED');
   const activeAlertIds = new Set(activeAlerts.map((alert) => alert.id));
