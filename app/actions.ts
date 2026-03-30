@@ -18,6 +18,7 @@ import {
 import { authConfig, decodeSession } from "@/lib/session";
 import { AppRole } from "@/lib/demo-data";
 import { isIssueUsedFor, issueUsedForOptions, type IssueUsedFor } from "@/lib/issue-usage";
+import { ACTIVE_ALERT_STATUSES } from "@/lib/alert-status";
 
 export type MaterialRecord = {
   id: string;
@@ -217,6 +218,7 @@ type ActionResult<T = undefined> = {
 
 type MaterialPayload = Omit<MaterialRecord, "id" | "quantity">;
 type JobPayload = Omit<JobRecord, "id">;
+type ExpectedPurchaseOrderPayload = Pick<ExpectedPurchaseOrderRecord, "poNumber" | "jobId" | "note">;
 
 type ParsedLocation = {
   locationType: InventoryLocationType;
@@ -960,7 +962,7 @@ export async function getActiveAlertCount(
       where: {
         ...accessFilter,
         status: {
-          in: ["OPEN", "TRIGGERED"],
+          in: ACTIVE_ALERT_STATUSES,
         },
       },
     });
@@ -1093,6 +1095,127 @@ export async function createExpectedPurchaseOrder(formData: FormData) {
   revalidatePath("/dashboard");
   revalidatePath("/receive-materials");
   redirect("/po-alerts?success=1");
+}
+
+export async function updateExpectedPurchaseOrder(
+  id: string,
+  payload: ExpectedPurchaseOrderPayload,
+): Promise<ActionResult<ExpectedPurchaseOrderRecord>> {
+  try {
+    const role = await requireRole("ADMIN", "PM");
+    const accessFilter = await buildAlertAccessFilter(role);
+
+    const poNumber = payload.poNumber.trim();
+    const normalizedPoNumber = normalizeTrackedPoNumber(poNumber);
+    const note = payload.note.trim();
+    const jobId = payload.jobId || null;
+
+    if (!poNumber) {
+      return { ok: false, error: "PO number is required." };
+    }
+
+    if (jobId) {
+      const job = await prisma.job.findUnique({
+        where: { id: jobId },
+        select: { id: true },
+      });
+      if (!job) {
+        return { ok: false, error: "Selected related job was not found." };
+      }
+    }
+
+    const updated = await prisma.expectedPurchaseOrder.updateMany({
+      where: {
+        id,
+        ...accessFilter,
+      },
+      data: {
+        poNumber,
+        normalizedPoNumber,
+        jobId,
+        note: note || null,
+      },
+    });
+
+    if (updated.count === 0) {
+      return { ok: false, error: "Tracked PO alert was not found." };
+    }
+
+    const row = await prisma.expectedPurchaseOrder.findUnique({
+      where: { id },
+      include: {
+        owner: {
+          select: {
+            email: true,
+          },
+        },
+        job: {
+          select: {
+            number: true,
+            name: true,
+          },
+        },
+        alerts: {
+          include: {
+            receivingRecord: {
+              include: {
+                material: {
+                  select: {
+                    name: true,
+                    sku: true,
+                  },
+                },
+              },
+            },
+          },
+          orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+          take: 1,
+        },
+      },
+    });
+
+    if (!row) {
+      return { ok: false, error: "Tracked PO alert was not found." };
+    }
+
+    revalidatePath("/po-alerts");
+    revalidatePath("/alerts");
+    revalidatePath("/dashboard");
+    revalidatePath("/receive-materials");
+
+    return {
+      ok: true,
+      data: {
+        id: row.id,
+        ownerId: row.ownerId,
+        ownerEmail: row.owner?.email ?? "Unassigned",
+        poNumber: row.poNumber,
+        normalizedPoNumber: row.normalizedPoNumber,
+        jobId: row.jobId,
+        jobLabel: row.job ? `${row.job.number} — ${row.job.name}` : "—",
+        note: row.note ?? "",
+        status: serializeAlertStatus(row.status),
+        createdAt: row.createdAt.toISOString(),
+        updatedAt: row.updatedAt.toISOString(),
+        lastTriggeredAt: row.lastTriggeredAt?.toISOString() ?? null,
+        seenAt: row.seenAt?.toISOString() ?? null,
+        resolvedAt: row.resolvedAt?.toISOString() ?? null,
+        triggerCount: row.triggerCount,
+        latestAlertId: row.alerts[0]?.id ?? null,
+        latestAlertMessage: row.alerts[0]?.message ?? "",
+        latestAlertReceiptId: row.alerts[0]?.receivingRecordId ?? null,
+        latestAlertInvoiceNumber:
+          row.alerts[0]?.receivingRecord.invoiceNumber ?? "—",
+        latestAlertMaterialName:
+          row.alerts[0]?.receivingRecord.material.name ?? "—",
+        latestAlertMaterialSku:
+          row.alerts[0]?.receivingRecord.material.sku ?? "—",
+      },
+    };
+  } catch (error) {
+    console.error("Failed to update tracked PO:", error);
+    return { ok: false, error: "Unable to save tracked PO right now." };
+  }
 }
 
 export async function markPurchaseOrderAlertSeen(formData: FormData) {
