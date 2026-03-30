@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
 
 import { MaterialRecord, createMaterial, deleteMaterial, updateMaterial } from '@/app/actions';
 import { AppRole } from '@/lib/demo-data';
@@ -31,6 +32,7 @@ export function MaterialsManager({
   const [error, setError] = useState<string>('');
   const [isPending, startTransition] = useTransition();
   const isReadOnly = !canManageInventory(role);
+  const router = useRouter();
 
   const submitLabel = useMemo(() => {
     if (isPending) {
@@ -108,6 +110,7 @@ export function MaterialsManager({
                 }
 
                 resetForm();
+                router.refresh();
               });
             }}
           >
