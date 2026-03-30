@@ -2,6 +2,7 @@ import { AppShell } from '@/app/components/app-shell';
 import { AlertsCenter } from '@/app/components/alerts-center';
 import { PoTrackerManager } from '@/app/components/po-tracker-manager';
 import { listExpectedPurchaseOrders, listJobs, listPurchaseOrderAlerts } from '@/app/actions';
+import { isActiveAlertStatus } from '@/lib/alert-status';
 import { getRole } from '@/lib/role';
 
 const errorMessages: Record<string, string> = {
@@ -23,6 +24,8 @@ export default async function PurchaseOrderAlertsPage({
   ]);
 
   const openJobs = jobs.filter((job) => job.status === 'OPEN');
+  const activeTrackedPurchaseOrders = trackedPurchaseOrders.filter((entry) => isActiveAlertStatus(entry.status));
+  const inactiveTrackedPurchaseOrders = trackedPurchaseOrders.filter((entry) => !isActiveAlertStatus(entry.status));
   const detailedMessage = searchParams.message ? decodeURIComponent(searchParams.message) : null;
   const errorMessage = detailedMessage || (searchParams.error ? errorMessages[searchParams.error] ?? 'Unable to save tracked PO.' : null);
   const showSuccess = searchParams.success === '1';
@@ -31,8 +34,13 @@ export default async function PurchaseOrderAlertsPage({
     <AppShell role={role}>
       {errorMessage ? <p style={{ color: '#b42318', marginBottom: '0.75rem' }}>{errorMessage}</p> : null}
       {showSuccess ? <p style={{ color: '#027a48', marginBottom: '0.75rem' }}>Tracked PO saved successfully.</p> : null}
-      <PoTrackerManager jobs={openJobs} trackedPurchaseOrders={trackedPurchaseOrders} role={role} />
-      <AlertsCenter trackedPurchaseOrders={trackedPurchaseOrders} triggeredAlerts={alerts} role={role} compact showHeaderLink />
+      <PoTrackerManager
+        jobs={openJobs}
+        trackedPurchaseOrders={activeTrackedPurchaseOrders}
+        inactiveTrackedPurchaseOrders={inactiveTrackedPurchaseOrders}
+        role={role}
+      />
+      <AlertsCenter trackedPurchaseOrders={activeTrackedPurchaseOrders} triggeredAlerts={alerts} role={role} compact showHeaderLink />
     </AppShell>
   );
 }
