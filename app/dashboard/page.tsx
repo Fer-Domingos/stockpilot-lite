@@ -4,7 +4,6 @@ import { AppShell } from '@/app/components/app-shell';
 import { AlertsCenter } from '@/app/components/alerts-center';
 import { getDashboardData } from '@/app/actions';
 import { LocalDateTime } from '@/app/components/local-date-time';
-import { InternalNotifications } from '@/app/components/internal-notifications';
 import { getRole } from '@/lib/role';
 
 export default async function DashboardPage({ searchParams }: { searchParams: { role?: string } }) {
@@ -46,8 +45,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: { 
         description="Open and triggered PO alerts that still need attention from project management."
         emptyMessage="No open or triggered alerts to review."
       />
-
-      <InternalNotifications notifications={data.notifications} role={role} />
 
       <section className="card">
         <div className="section-title">
