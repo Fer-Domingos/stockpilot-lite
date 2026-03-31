@@ -13,7 +13,7 @@ const errorMessages: Record<string, string> = {
 export default async function PurchaseOrderAlertsPage({
   searchParams
 }: {
-  searchParams: { role?: string; error?: string; message?: string; success?: string };
+  searchParams: { role?: string; error?: string; message?: string; success?: string; edit?: string };
 }) {
   const role = await getRole(searchParams.role);
   const [{ data: jobs }, { data: trackedPurchaseOrders }, { data: alerts }] = await Promise.all([
@@ -31,7 +31,7 @@ export default async function PurchaseOrderAlertsPage({
     <AppShell role={role}>
       {errorMessage ? <p style={{ color: '#b42318', marginBottom: '0.75rem' }}>{errorMessage}</p> : null}
       {showSuccess ? <p style={{ color: '#027a48', marginBottom: '0.75rem' }}>Tracked PO saved successfully.</p> : null}
-      <PoTrackerManager jobs={openJobs} trackedPurchaseOrders={trackedPurchaseOrders} role={role} />
+      <PoTrackerManager jobs={openJobs} trackedPurchaseOrders={trackedPurchaseOrders} role={role} initialEditingId={searchParams.edit ?? null} />
       <AlertsCenter trackedPurchaseOrders={trackedPurchaseOrders} triggeredAlerts={alerts} role={role} compact showHeaderLink />
     </AppShell>
   );

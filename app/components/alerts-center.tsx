@@ -71,8 +71,11 @@ export function AlertsCenter({
           </thead>
           <tbody>
             {rows.map((alert) => {
+              const canEdit = role === 'ADMIN' && (alert.status === 'OPEN' || alert.status === 'TRIGGERED');
               const canMarkSeen = canUpdateAlerts && alert.status === 'TRIGGERED';
-              const canResolve = canUpdateAlerts && (alert.status === 'TRIGGERED' || alert.status === 'SEEN');
+              const canResolve =
+                canUpdateAlerts &&
+                (alert.status === 'OPEN' || alert.status === 'TRIGGERED' || alert.status === 'SEEN');
               const lastUpdated = alert.lastTriggeredAt ?? alert.createdAt;
 
               return (
@@ -102,6 +105,17 @@ export function AlertsCenter({
                   <td>{alert.latestAlertInvoiceNumber}</td>
                   <td>
                     <div className="row-actions">
+                      {canEdit ? (
+                        <Link
+                          className="secondary-button"
+                          href={{
+                            pathname: '/po-alerts',
+                            query: { role, edit: alert.id }
+                          }}
+                        >
+                          Edit
+                        </Link>
+                      ) : null}
                       {canMarkSeen ? (
                         <form className="inline-form" action={markPurchaseOrderAlertSeen}>
                           <input type="hidden" name="expectedPoId" value={alert.id} />
@@ -116,11 +130,11 @@ export function AlertsCenter({
                           <input type="hidden" name="expectedPoId" value={alert.id} />
                           <input type="hidden" name="role" value={role} />
                           <button className="danger-button" type="submit">
-                            Resolve
+                            Cancel
                           </button>
                         </form>
                       ) : null}
-                      {!canMarkSeen && !canResolve ? <span className="muted">No action</span> : null}
+                      {!canEdit && !canMarkSeen && !canResolve ? <span className="muted">No action</span> : null}
                     </div>
                   </td>
                 </tr>
