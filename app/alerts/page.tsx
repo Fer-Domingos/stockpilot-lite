@@ -1,15 +1,18 @@
 import { AlertsCenter } from '@/app/components/alerts-center';
 import { AppShell } from '@/app/components/app-shell';
-import { listExpectedPurchaseOrders, listPurchaseOrderAlerts } from '@/app/actions';
+import { InternalNotifications } from '@/app/components/internal-notifications';
+import { listExpectedPurchaseOrders, listInAppNotifications, listPurchaseOrderAlerts } from '@/app/actions';
 import { getRole } from '@/lib/role';
 
 const successMessages: Record<string, string> = {
   seen: 'Alert marked as seen.',
-  resolved: 'Alert marked as resolved.'
+  resolved: 'Alert marked as resolved.',
+  'notification-read': 'Notification marked as read.'
 };
 
 const errorMessages: Record<string, string> = {
-  'invalid-alert': 'The selected PO alert was not found.'
+  'invalid-alert': 'The selected PO alert was not found.',
+  'invalid-notification': 'The selected notification was not found.'
 };
 
 export default async function AlertsPage({
@@ -18,9 +21,10 @@ export default async function AlertsPage({
   searchParams: { role?: string; error?: string; success?: string };
 }) {
   const role = await getRole(searchParams.role);
-  const [{ data: trackedPurchaseOrders }, { data: triggeredAlerts }] = await Promise.all([
+  const [{ data: trackedPurchaseOrders }, { data: triggeredAlerts }, { data: notifications }] = await Promise.all([
     listExpectedPurchaseOrders(role),
-    listPurchaseOrderAlerts(50, role)
+    listPurchaseOrderAlerts(50, role),
+    listInAppNotifications(50, role)
   ]);
 
   const successMessage = searchParams.success ? successMessages[searchParams.success] ?? null : null;
@@ -51,6 +55,8 @@ export default async function AlertsPage({
           <h3>{resolvedAlerts.length}</h3>
         </article>
       </section>
+
+      <InternalNotifications notifications={notifications} role={role} />
 
       <AlertsCenter
         trackedPurchaseOrders={activeAlerts}
