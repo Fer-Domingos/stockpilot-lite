@@ -7,7 +7,16 @@ import { getRole } from '@/lib/role';
 const errorMessages: Record<string, string> = {
   'missing-po-number': 'PO number is required.',
   'invalid-job': 'Selected related job was not found.',
+  'invalid-alert': 'The selected PO alert was not found.',
   'save-failed': 'Unable to save the tracked PO number right now.'
+};
+
+const successMessages: Record<string, string> = {
+  '1': 'Tracked PO saved successfully.',
+  updated: 'Tracked PO updated successfully.',
+  resolved: 'Alert resolved successfully.',
+  reopened: 'Alert reopened successfully.',
+  seen: 'Alert marked as seen.'
 };
 
 export default async function PurchaseOrderAlertsPage({
@@ -25,12 +34,12 @@ export default async function PurchaseOrderAlertsPage({
   const openJobs = jobs.filter((job) => job.status === 'OPEN');
   const detailedMessage = searchParams.message ? decodeURIComponent(searchParams.message) : null;
   const errorMessage = detailedMessage || (searchParams.error ? errorMessages[searchParams.error] ?? 'Unable to save tracked PO.' : null);
-  const showSuccess = searchParams.success === '1';
+  const successMessage = searchParams.success ? successMessages[searchParams.success] ?? null : null;
 
   return (
     <AppShell role={role}>
       {errorMessage ? <p style={{ color: '#b42318', marginBottom: '0.75rem' }}>{errorMessage}</p> : null}
-      {showSuccess ? <p style={{ color: '#027a48', marginBottom: '0.75rem' }}>Tracked PO saved successfully.</p> : null}
+      {successMessage ? <p style={{ color: '#027a48', marginBottom: '0.75rem' }}>{successMessage}</p> : null}
       <PoTrackerManager jobs={openJobs} trackedPurchaseOrders={trackedPurchaseOrders} role={role} />
       <AlertsCenter trackedPurchaseOrders={trackedPurchaseOrders} triggeredAlerts={alerts} role={role} compact showHeaderLink />
     </AppShell>

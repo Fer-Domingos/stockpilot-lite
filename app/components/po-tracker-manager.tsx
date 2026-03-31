@@ -1,6 +1,14 @@
 'use client';
 
-import { createExpectedPurchaseOrder, ExpectedPurchaseOrderRecord, JobRecord } from '@/app/actions';
+import { useState } from 'react';
+
+import {
+  createExpectedPurchaseOrder,
+  ExpectedPurchaseOrderRecord,
+  JobRecord,
+  performExpectedPurchaseOrderAction,
+  updateExpectedPurchaseOrder
+} from '@/app/actions';
 import { AppRole } from '@/lib/demo-data';
 import { AlertStatusBadge } from '@/app/components/alert-status-badge';
 
@@ -13,6 +21,8 @@ export function PoTrackerManager({
   trackedPurchaseOrders: ExpectedPurchaseOrderRecord[];
   role: AppRole;
 }) {
+  const [editingId, setEditingId] = useState<string | null>(null);
+
   return (
     <>
       <section className="card">
@@ -58,29 +68,98 @@ export function PoTrackerManager({
               <th>Latest Trigger</th>
               <th>Latest Notification</th>
               <th>Added</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
             {trackedPurchaseOrders.length === 0 ? (
               <tr>
-                <td colSpan={7} className="muted">No tracked PO numbers yet.</td>
+                <td colSpan={8} className="muted">No tracked PO numbers yet.</td>
               </tr>
             ) : (
               trackedPurchaseOrders.map((entry) => (
                 <tr key={entry.id}>
-                  <td>
-                    <AlertStatusBadge status={entry.status} />
-                    <div className="muted">Triggered {entry.triggerCount} time(s)</div>
-                  </td>
-                  <td>
-                    {entry.poNumber}
-                    <div className="muted">Normalized: {entry.normalizedPoNumber}</div>
-                  </td>
-                  <td>{entry.jobLabel}</td>
-                  <td>{entry.note || '—'}</td>
-                  <td>{entry.lastTriggeredAt ? new Date(entry.lastTriggeredAt).toLocaleString() : '—'}</td>
-                  <td>{entry.latestAlertMessage || 'Awaiting matching receipt.'}</td>
-                  <td>{new Date(entry.createdAt).toLocaleString()}</td>
+                  {editingId === entry.id ? (
+                    <>
+                      <td>
+                        <AlertStatusBadge status={entry.status} />
+                        <div className="muted">Triggered {entry.triggerCount} time(s)</div>
+                      </td>
+                      <td colSpan={7}>
+                        <form className="inline-form" action={updateExpectedPurchaseOrder}>
+                          <input type="hidden" name="role" value={role} />
+                          <input type="hidden" name="expectedPoId" value={entry.id} />
+                          <div style={{ display: 'grid', gap: '0.5rem', gridTemplateColumns: '1fr 1fr 1fr auto auto' }}>
+                            <input name="poNumber" required defaultValue={entry.poNumber} aria-label="PO Number" />
+                            <select name="jobId" defaultValue={entry.jobId ?? ''} aria-label="Related Job">
+                              <option value="">No related job</option>
+                              {jobs.map((job) => (
+                                <option key={job.id} value={job.id}>
+                                  {job.number} — {job.name}
+                                </option>
+                              ))}
+                            </select>
+                            <input name="note" defaultValue={entry.note} aria-label="Note" placeholder="Optional note" />
+                            <button className="secondary-button" type="submit">
+                              Save
+                            </button>
+                            <button className="ghost-button" type="button" onClick={() => setEditingId(null)}>
+                              Cancel
+                            </button>
+                          </div>
+                        </form>
+                      </td>
+                    </>
+                  ) : (
+                    <>
+                      <td>
+                        <AlertStatusBadge status={entry.status} />
+                        <div className="muted">Triggered {entry.triggerCount} time(s)</div>
+                      </td>
+                      <td>
+                        {entry.poNumber}
+                        <div className="muted">Normalized: {entry.normalizedPoNumber}</div>
+                      </td>
+                      <td>{entry.jobLabel}</td>
+                      <td>{entry.note || '—'}</td>
+                      <td>{entry.lastTriggeredAt ? new Date(entry.lastTriggeredAt).toLocaleString() : '—'}</td>
+                      <td>{entry.latestAlertMessage || 'Awaiting matching receipt.'}</td>
+                      <td>{new Date(entry.createdAt).toLocaleString()}</td>
+                      <td>
+                        <form className="inline-form" action={performExpectedPurchaseOrderAction}>
+                          <input type="hidden" name="expectedPoId" value={entry.id} />
+                          <input type="hidden" name="role" value={role} />
+                          <select
+                            name="actionType"
+                            aria-label={`Action for ${entry.poNumber}`}
+                            defaultValue=""
+                            onChange={(event) => {
+                              const action = event.target.value;
+                              if (!action) {
+                                return;
+                              }
+
+                              if (action === 'edit') {
+                                setEditingId(entry.id);
+                                event.target.value = '';
+                                return;
+                              }
+
+                              setEditingId(null);
+                              event.currentTarget.form?.requestSubmit();
+                            }}
+                          >
+                            <option value="">Select Action</option>
+                            <option value="edit">Edit</option>
+                            {(entry.status === 'OPEN' || entry.status === 'TRIGGERED' || entry.status === 'SEEN') && (
+                              <option value="resolve">Resolve</option>
+                            )}
+                            {entry.status === 'RESOLVED' && <option value="reopen">Reopen</option>}
+                          </select>
+                        </form>
+                      </td>
+                    </>
+                  )}
                 </tr>
               ))
             )}
