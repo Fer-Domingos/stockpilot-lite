@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import {
   createExpectedPurchaseOrder,
@@ -15,13 +15,21 @@ import { AlertStatusBadge } from '@/app/components/alert-status-badge';
 export function PoTrackerManager({
   jobs,
   trackedPurchaseOrders,
-  role
+  role,
+  clearEditingOnLoad = false
 }: {
   jobs: JobRecord[];
   trackedPurchaseOrders: ExpectedPurchaseOrderRecord[];
   role: AppRole;
+  clearEditingOnLoad?: boolean;
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (clearEditingOnLoad) {
+      setEditingId(null);
+    }
+  }, [clearEditingOnLoad]);
 
   return (
     <>
@@ -122,9 +130,6 @@ export function PoTrackerManager({
                         <td>
                           <button className="secondary-button" type="submit" form={`edit-po-${entry.id}`}>
                             Save
-                          </button>
-                          <button className="ghost-button" type="button" onClick={() => setEditingId(null)}>
-                            Cancel
                           </button>
                         </td>
                       </>
