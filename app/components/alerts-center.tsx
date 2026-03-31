@@ -19,7 +19,8 @@ export function AlertsCenter({
   title,
   description,
   emptyMessage,
-  showTriggeredNotifications = true
+  showTriggeredNotifications = true,
+  allowStatusActions = true
 }: {
   trackedPurchaseOrders: ExpectedPurchaseOrderRecord[];
   triggeredAlerts: PurchaseOrderAlertRecord[];
@@ -30,6 +31,7 @@ export function AlertsCenter({
   description?: string;
   emptyMessage?: string;
   showTriggeredNotifications?: boolean;
+  allowStatusActions?: boolean;
 }) {
   const activeAlerts = trackedPurchaseOrders.filter((alert) => alert.status !== 'RESOLVED');
   const canUpdateAlerts = canManageAlerts(role);
@@ -71,8 +73,8 @@ export function AlertsCenter({
           </thead>
           <tbody>
             {rows.map((alert) => {
-              const canMarkSeen = canUpdateAlerts && alert.status === 'TRIGGERED';
-              const canResolve = canUpdateAlerts && (alert.status === 'TRIGGERED' || alert.status === 'SEEN');
+              const canMarkSeen = allowStatusActions && canUpdateAlerts && alert.status === 'TRIGGERED';
+              const canResolve = allowStatusActions && canUpdateAlerts && (alert.status === 'TRIGGERED' || alert.status === 'SEEN');
               const lastUpdated = alert.lastTriggeredAt ?? alert.createdAt;
 
               return (
@@ -120,7 +122,8 @@ export function AlertsCenter({
                           </button>
                         </form>
                       ) : null}
-                      {!canMarkSeen && !canResolve ? <span className="muted">No action</span> : null}
+                      {!allowStatusActions ? <span className="muted">Read-only summary</span> : null}
+                      {allowStatusActions && !canMarkSeen && !canResolve ? <span className="muted">No action</span> : null}
                     </div>
                   </td>
                 </tr>
