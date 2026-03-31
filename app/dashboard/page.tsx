@@ -4,6 +4,7 @@ import { AppShell } from '@/app/components/app-shell';
 import { AlertsCenter } from '@/app/components/alerts-center';
 import { getDashboardData } from '@/app/actions';
 import { LocalDateTime } from '@/app/components/local-date-time';
+import { isActiveAlertStatus } from '@/lib/alert-status';
 import { getRole } from '@/lib/role';
 
 export default async function DashboardPage({ searchParams }: { searchParams: { role?: string } }) {
@@ -36,7 +37,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: { 
       </section>
 
       <AlertsCenter
-        trackedPurchaseOrders={data.trackedPoAlerts.filter((alert) => alert.status !== 'RESOLVED')}
+        trackedPurchaseOrders={data.trackedPoAlerts.filter((alert) => isActiveAlertStatus(alert.status))}
         triggeredAlerts={data.poAlerts.filter((alert) => alert.status !== 'RESOLVED')}
         role={role}
         compact
