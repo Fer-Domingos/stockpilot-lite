@@ -16,6 +16,27 @@ const emptyForm: JobFormState = {
 
 const statuses: JobStatus[] = ['OPEN', 'CLOSED'];
 
+function toSafeString(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+function toSafeStatus(value: unknown): JobStatus {
+  return statuses.includes(value as JobStatus) ? (value as JobStatus) : 'OPEN';
+}
+
+function sanitizeJobRecord(job: Partial<JobRecord> | null | undefined): JobRecord | null {
+  if (!job || typeof job.id !== 'string' || !job.id.trim()) {
+    return null;
+  }
+
+  return {
+    id: job.id,
+    number: toSafeString(job.number),
+    name: toSafeString(job.name),
+    status: toSafeStatus(job.status)
+  };
+}
+
 export function JobsManager({
   initialJobs,
   role
@@ -23,7 +44,11 @@ export function JobsManager({
   initialJobs: JobRecord[];
   role: AppRole;
 }) {
-  const [jobs, setJobs] = useState<JobRecord[]>(initialJobs);
+  const [jobs, setJobs] = useState<JobRecord[]>(() =>
+    (Array.isArray(initialJobs) ? initialJobs : [])
+      .map((job) => sanitizeJobRecord(job))
+      .filter((job): job is JobRecord => job !== null)
+  );
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<JobFormState>(emptyForm);
   const [error, setError] = useState('');
@@ -38,9 +63,9 @@ export function JobsManager({
 
   function normalizeJobForm(payload: JobFormState): JobFormState {
     return {
-      number: payload.number.trim(),
-      name: payload.name.trim(),
-      status: statuses.includes(payload.status) ? payload.status : 'OPEN'
+      number: toSafeString(payload.number).trim(),
+      name: toSafeString(payload.name).trim(),
+      status: toSafeStatus(payload.status)
     };
   }
 
@@ -78,7 +103,11 @@ export function JobsManager({
                     return;
                   }
 
-                  const updatedJob = result.data;
+                  const updatedJob = sanitizeJobRecord(result.data);
+                  if (!updatedJob) {
+                    setError('Job was updated but returned invalid data.');
+                    return;
+                  }
                   setJobs((current) => current.map((job) => (job.id === editingId ? updatedJob : job)));
                 } else {
                   const result = await createJob(normalizedForm);
@@ -93,7 +122,11 @@ export function JobsManager({
                     return;
                   }
 
-                  const createdJob = result.data;
+                  const createdJob = sanitizeJobRecord(result.data);
+                  if (!createdJob) {
+                    setError('Job was created but returned invalid data.');
+                    return;
+                  }
                   setJobs((current) => [...current, createdJob]);
                 }
 
@@ -185,12 +218,12 @@ export function JobsManager({
                           startTransition(async () => {
                             const result = await deleteJob(job.id);
 
-                            if (!result.ok) {
-                              setError(result.error ?? 'Failed to delete job.');
-                              return;
-                            }
+                          if (!result.ok) {
+                            setError(result.error ?? 'Failed to delete job.');
+                            return;
+                          }
 
-                            setJobs((current) => current.filter((entry) => entry.id !== job.id));
+                          setJobs((current) => current.filter((entry) => entry.id !== job.id));
                           });
                         }}
                       >
