@@ -46,24 +46,31 @@ export default async function UsersPage() {
           </div>
         </div>
 
-        <table>
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Email</th>
-              <th>Role</th>
-              <th>Created</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {users.map((user) => (
-              <tr key={user.id}>
-                <td>{user.name}</td>
-                <td>{user.email}</td>
-                <td>{user.role}</td>
-                <td>{new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' }).format(user.createdAt)}</td>
-                <td>
+        <div className="user-list">
+          {users.map((user) => (
+            <article key={user.id} className="user-entry">
+              <dl className="user-entry-details">
+                <div>
+                  <dt>Name</dt>
+                  <dd>{user.name}</dd>
+                </div>
+                <div>
+                  <dt>Email</dt>
+                  <dd>{user.email}</dd>
+                </div>
+                <div>
+                  <dt>Current role</dt>
+                  <dd>{user.role}</dd>
+                </div>
+                <div>
+                  <dt>Created</dt>
+                  <dd>{new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' }).format(user.createdAt)}</dd>
+                </div>
+              </dl>
+
+              <div className="user-entry-sections">
+                <section className="user-entry-section">
+                  <p className="user-entry-section-label">Admin actions</p>
                   <UserManagementActions
                     userId={user.id}
                     currentRole={user.role}
@@ -76,12 +83,16 @@ export default async function UsersPage() {
                           : undefined
                     }
                   />
+                </section>
+
+                <section className="user-entry-section">
+                  <p className="user-entry-section-label">Reset password</p>
                   <ResetPasswordForm userId={user.id} />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                </section>
+              </div>
+            </article>
+          ))}
+        </div>
       </section>
     </AppShell>
   );

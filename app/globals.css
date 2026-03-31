@@ -574,11 +574,73 @@ form {
   color: #166534;
 }
 
+.user-list {
+  display: grid;
+  gap: 14px;
+}
+
+.user-entry {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+  padding: 14px;
+  display: grid;
+  gap: 14px;
+}
+
+.user-entry-details {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px 14px;
+}
+
+.user-entry-details dt {
+  font-size: 0.78rem;
+  color: #475569;
+  margin-bottom: 4px;
+}
+
+.user-entry-details dd {
+  margin: 0;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.user-entry-sections {
+  display: grid;
+  gap: 12px;
+}
+
+.user-entry-section {
+  border-top: 1px solid #e2e8f0;
+  padding-top: 12px;
+}
+
+.user-entry-section-label {
+  margin: 0 0 8px;
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #64748b;
+  font-weight: 700;
+}
+
 .reset-password-form {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
+  display: grid;
+  gap: 10px;
+  max-width: 440px;
+}
+
+.password-control-field {
+  display: grid;
+  gap: 6px;
+}
+
+.password-control-field label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #334155;
 }
 
 .password-input-row {
@@ -592,8 +654,8 @@ form {
 }
 
 .reset-password-form .password-input-row input {
-  width: 190px;
-  min-width: 140px;
+  width: 100%;
+  min-width: 0;
 }
 
 .reset-password-form button {
@@ -603,7 +665,6 @@ form {
 
 .reset-password-form .form-feedback {
   margin-top: 0;
-  width: 100%;
 }
 
 .profile-details {
@@ -629,18 +690,33 @@ form {
 .user-management-actions {
   display: grid;
   gap: 8px;
-  margin-bottom: 8px;
 }
 
 .user-role-form {
   display: flex;
-  align-items: center;
+  flex-wrap: wrap;
+  align-items: end;
   gap: 8px;
+}
+
+.user-action-field {
+  display: grid;
+  gap: 6px;
+}
+
+.user-action-field span {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #334155;
 }
 
 .user-role-form select {
   width: auto;
-  min-width: 110px;
+  min-width: 130px;
+}
+
+.user-remove-form {
+  display: flex;
 }
 
 .user-management-actions .form-feedback {
