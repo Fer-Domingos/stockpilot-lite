@@ -3,6 +3,7 @@ import { AlertsCenter } from '@/app/components/alerts-center';
 import { PoTrackerManager } from '@/app/components/po-tracker-manager';
 import { listExpectedPurchaseOrders, listJobs, listPurchaseOrderAlerts } from '@/app/actions';
 import { getRole } from '@/lib/role';
+import { isActiveAlertStatus } from '@/lib/po-alerts';
 
 const errorMessages: Record<string, string> = {
   'missing-po-number': 'PO number is required.',
@@ -23,8 +24,11 @@ export default async function PurchaseOrderAlertsPage({
   ]);
 
   const openJobs = jobs.filter((job) => job.status === 'OPEN');
+  const activeTrackedPurchaseOrders = trackedPurchaseOrders.filter((alert) => isActiveAlertStatus(alert.status));
   const detailedMessage = searchParams.message ? decodeURIComponent(searchParams.message) : null;
   const errorMessage = detailedMessage || (searchParams.error ? errorMessages[searchParams.error] ?? 'Unable to save tracked PO.' : null);
+  const activeTrackedPurchaseOrderIds = new Set(activeTrackedPurchaseOrders.map((alert) => alert.id));
+  const activeAlerts = alerts.filter((alert) => activeTrackedPurchaseOrderIds.has(alert.expectedPoId));
   const showSuccess = searchParams.success === '1';
 
   return (
@@ -32,7 +36,15 @@ export default async function PurchaseOrderAlertsPage({
       {errorMessage ? <p style={{ color: '#b42318', marginBottom: '0.75rem' }}>{errorMessage}</p> : null}
       {showSuccess ? <p style={{ color: '#027a48', marginBottom: '0.75rem' }}>Tracked PO saved successfully.</p> : null}
       <PoTrackerManager jobs={openJobs} trackedPurchaseOrders={trackedPurchaseOrders} role={role} />
-      <AlertsCenter trackedPurchaseOrders={trackedPurchaseOrders} triggeredAlerts={alerts} role={role} compact showHeaderLink />
+      <AlertsCenter
+        trackedPurchaseOrders={activeTrackedPurchaseOrders}
+        triggeredAlerts={activeAlerts}
+        role={role}
+        compact
+        showHeaderLink
+        title="Active Alerts"
+        description="Open and triggered PO alerts that currently drive the Alerts sidebar badge."
+      />
     </AppShell>
   );
 }

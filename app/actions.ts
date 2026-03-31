@@ -11,6 +11,7 @@ import {
 } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
+import { ACTIVE_ALERT_STATUSES } from "@/lib/po-alerts";
 import {
   listInventoryTransactions as listInventoryTransactionsQuery,
   type InventoryTransactionView,
@@ -960,7 +961,7 @@ export async function getActiveAlertCount(
       where: {
         ...accessFilter,
         status: {
-          in: ["OPEN", "TRIGGERED"],
+          in: [...ACTIVE_ALERT_STATUSES],
         },
       },
     });

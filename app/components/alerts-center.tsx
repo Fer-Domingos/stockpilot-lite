@@ -9,6 +9,7 @@ import {
 import { AlertStatusBadge } from '@/app/components/alert-status-badge';
 import { AppRole } from '@/lib/demo-data';
 import { canManageAlerts } from '@/lib/permissions';
+import { isActiveAlertStatus } from '@/lib/po-alerts';
 
 export function AlertsCenter({
   trackedPurchaseOrders,
@@ -31,7 +32,7 @@ export function AlertsCenter({
   emptyMessage?: string;
   showTriggeredNotifications?: boolean;
 }) {
-  const activeAlerts = trackedPurchaseOrders.filter((alert) => alert.status !== 'RESOLVED');
+  const activeAlerts = trackedPurchaseOrders.filter((alert) => isActiveAlertStatus(alert.status));
   const canUpdateAlerts = canManageAlerts(role);
   const rows = compact ? activeAlerts.slice(0, 6) : trackedPurchaseOrders;
   const heading = title ?? (compact ? 'Alerts Requiring Attention' : 'Alerts / Notifications');

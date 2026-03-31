@@ -5,6 +5,7 @@ import { AlertsCenter } from '@/app/components/alerts-center';
 import { getDashboardData } from '@/app/actions';
 import { LocalDateTime } from '@/app/components/local-date-time';
 import { getRole } from '@/lib/role';
+import { isActiveAlertStatus } from '@/lib/po-alerts';
 
 export default async function DashboardPage({ searchParams }: { searchParams: { role?: string } }) {
   const role = await getRole(searchParams.role);
@@ -36,8 +37,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: { 
       </section>
 
       <AlertsCenter
-        trackedPurchaseOrders={data.trackedPoAlerts.filter((alert) => alert.status !== 'RESOLVED')}
-        triggeredAlerts={data.poAlerts.filter((alert) => alert.status !== 'RESOLVED')}
+        trackedPurchaseOrders={data.trackedPoAlerts.filter((alert) => isActiveAlertStatus(alert.status))}
+        triggeredAlerts={data.poAlerts.filter((alert) => isActiveAlertStatus(alert.status))}
         role={role}
         compact
         showHeaderLink
