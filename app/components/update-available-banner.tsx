@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from 'react';
 
 const POLL_INTERVAL_MS = 60_000;
-const SHOWN_SESSION_KEY = 'stockpilot:update-banner-seen';
 
 function isUserEditingForm() {
   const activeElement = document.activeElement;
@@ -21,23 +20,14 @@ function isUserEditingForm() {
 
 export function UpdateAvailableBanner({ currentVersion }: { currentVersion: string }) {
   const [isVisible, setIsVisible] = useState(false);
-  const [hasCheckedSession, setHasCheckedSession] = useState(false);
   const normalizedCurrentVersion = useMemo(() => currentVersion.trim(), [currentVersion]);
 
   useEffect(() => {
-    setHasCheckedSession(sessionStorage.getItem(SHOWN_SESSION_KEY) === '1');
-  }, []);
-
-  useEffect(() => {
-    if (hasCheckedSession) {
-      return;
-    }
-
     let isCancelled = false;
 
     async function checkForUpdate() {
       try {
-        const response = await fetch('/api/version', { cache: 'no-store' });
+        const response = await fetch(`/api/version?ts=${Date.now()}`, { cache: 'no-store' });
         if (!response.ok) {
           return;
         }
@@ -57,7 +47,6 @@ export function UpdateAvailableBanner({ currentVersion }: { currentVersion: stri
           return;
         }
 
-        sessionStorage.setItem(SHOWN_SESSION_KEY, '1');
         setIsVisible(true);
       } catch {
         // Silent fail; polling retries on next interval.
@@ -71,7 +60,7 @@ export function UpdateAvailableBanner({ currentVersion }: { currentVersion: stri
       isCancelled = true;
       window.clearInterval(timer);
     };
-  }, [hasCheckedSession, normalizedCurrentVersion]);
+  }, [normalizedCurrentVersion]);
 
   if (!isVisible) {
     return null;
