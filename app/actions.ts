@@ -18,6 +18,7 @@ import {
 import { authConfig, decodeSession } from "@/lib/session";
 import { AppRole } from "@/lib/demo-data";
 import { isIssueUsedFor, issueUsedForOptions, type IssueUsedFor } from "@/lib/issue-usage";
+import { ACTIVE_ALERT_STATUSES } from "@/lib/po-alerts";
 
 export type MaterialRecord = {
   id: string;
@@ -960,7 +961,7 @@ export async function getActiveAlertCount(
       where: {
         ...accessFilter,
         status: {
-          in: ["OPEN", "TRIGGERED"],
+          in: [...ACTIVE_ALERT_STATUSES],
         },
       },
     });

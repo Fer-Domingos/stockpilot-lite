@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
 
 import { JobRecord, JobStatus, createJob, deleteJob, updateJob } from '@/app/actions';
 import { AppRole } from '@/lib/demo-data';
@@ -29,6 +30,7 @@ export function JobsManager({
   const [error, setError] = useState('');
   const [isPending, startTransition] = useTransition();
   const isReadOnly = !canManageInventory(role);
+  const router = useRouter();
 
   function resetForm() {
     setEditingId(null);
@@ -98,6 +100,7 @@ export function JobsManager({
                 }
 
                 resetForm();
+                router.refresh();
               });
             }}
           >
