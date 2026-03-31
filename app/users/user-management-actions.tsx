@@ -83,7 +83,7 @@ export function UserManagementActions({
             return;
           }
 
-          if (!window.confirm('Remove this user? This action cannot be undone.')) {
+          if (!window.confirm('Are you sure you want to remove this user?')) {
             event.preventDefault();
           }
         }}
