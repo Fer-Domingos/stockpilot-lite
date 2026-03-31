@@ -75,10 +75,11 @@ export function MaterialsManager({
               setError('');
 
               const normalizedForm = normalizeFormData(form);
+              const currentEditingId = editingId;
 
               startTransition(async () => {
-                if (editingId) {
-                  const result = await updateMaterial(editingId, normalizedForm);
+                if (currentEditingId) {
+                  const result = await updateMaterial(currentEditingId, normalizedForm);
                   if (!result.ok) {
                     setError(result.error ?? 'Failed to save material.');
                     return;
@@ -90,7 +91,10 @@ export function MaterialsManager({
                   }
 
                   const updatedMaterial = result.data;
-                  setMaterials((current) => current.map((material) => (material.id === editingId ? updatedMaterial : material)));
+                  setMaterials((current) =>
+                    current.map((material) => (material.id === currentEditingId ? updatedMaterial : material))
+                  );
+                  resetForm();
                 } else {
                   const result = await createMaterial(normalizedForm);
                   if (!result.ok) {
@@ -105,9 +109,8 @@ export function MaterialsManager({
 
                   const createdMaterial = result.data;
                   setMaterials((current) => [...current, createdMaterial]);
+                  resetForm();
                 }
-
-                resetForm();
               });
             }}
           >
