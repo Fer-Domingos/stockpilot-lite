@@ -19,7 +19,8 @@ export function AlertsCenter({
   title,
   description,
   emptyMessage,
-  showTriggeredNotifications = true
+  showTriggeredNotifications = true,
+  showActions = true
 }: {
   trackedPurchaseOrders: ExpectedPurchaseOrderRecord[];
   triggeredAlerts: PurchaseOrderAlertRecord[];
@@ -30,6 +31,7 @@ export function AlertsCenter({
   description?: string;
   emptyMessage?: string;
   showTriggeredNotifications?: boolean;
+  showActions?: boolean;
 }) {
   const activeAlerts = trackedPurchaseOrders.filter((alert) => alert.status !== 'RESOLVED');
   const canUpdateAlerts = canManageAlerts(role);
@@ -71,8 +73,8 @@ export function AlertsCenter({
           </thead>
           <tbody>
             {rows.map((alert) => {
-              const canMarkSeen = canUpdateAlerts && alert.status === 'TRIGGERED';
-              const canResolve = canUpdateAlerts && (alert.status === 'TRIGGERED' || alert.status === 'SEEN');
+              const canMarkSeen = showActions && canUpdateAlerts && alert.status === 'TRIGGERED';
+              const canResolve = showActions && canUpdateAlerts && (alert.status === 'TRIGGERED' || alert.status === 'SEEN');
               const lastUpdated = alert.lastTriggeredAt ?? alert.createdAt;
 
               return (

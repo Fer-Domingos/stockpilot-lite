@@ -1095,6 +1095,69 @@ export async function createExpectedPurchaseOrder(formData: FormData) {
   redirect("/po-alerts?success=1");
 }
 
+export async function updateExpectedPurchaseOrder(formData: FormData) {
+  await requireRole("ADMIN");
+
+  const expectedPoId = String(formData.get("expectedPoId") ?? "").trim();
+  const poNumber = String(formData.get("poNumber") ?? "").trim();
+  const normalizedPoNumber = normalizeTrackedPoNumber(poNumber);
+  const jobIdValue = String(formData.get("jobId") ?? "").trim();
+  const note = String(formData.get("note") ?? "").trim();
+  const jobId = jobIdValue || null;
+
+  if (!expectedPoId || !poNumber) {
+    redirect("/po-alerts?error=missing-po-number");
+  }
+
+  if (jobId) {
+    const job = await prisma.job.findUnique({
+      where: { id: jobId },
+      select: { id: true },
+    });
+
+    if (!job) {
+      redirect("/po-alerts?error=invalid-job");
+    }
+  }
+
+  try {
+    await prisma.expectedPurchaseOrder.update({
+      where: { id: expectedPoId },
+      data: {
+        poNumber,
+        normalizedPoNumber,
+        jobId,
+        note: note || null,
+      },
+    });
+  } catch (error) {
+    console.error("Failed to update tracked PO:", error);
+    redirect(
+      `/po-alerts?error=save-failed&message=${encodeURIComponent(formatExpectedPoMutationError(error))}`,
+    );
+  }
+
+  revalidatePath("/po-alerts");
+  revalidatePath("/alerts");
+  revalidatePath("/dashboard");
+  revalidatePath("/receive-materials");
+  redirect("/po-alerts?success=updated");
+}
+
+export async function cancelExpectedPurchaseOrder(formData: FormData) {
+  await requireRole("ADMIN");
+
+  const expectedPoId = String(formData.get("expectedPoId") ?? "").trim();
+
+  if (!expectedPoId) {
+    redirect("/po-alerts?error=invalid-alert");
+  }
+
+  await updateTrackedPurchaseOrderStatus(expectedPoId, "RESOLVED", "ADMIN");
+
+  redirect("/po-alerts?success=canceled");
+}
+
 export async function markPurchaseOrderAlertSeen(formData: FormData) {
   await requireRole("ADMIN", "PM");
 
