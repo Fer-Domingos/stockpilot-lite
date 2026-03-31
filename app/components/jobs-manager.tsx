@@ -63,10 +63,11 @@ export function JobsManager({
               setError('');
 
               const normalizedForm = normalizeJobForm(form);
+              const currentEditingId = editingId;
 
               startTransition(async () => {
-                if (editingId) {
-                  const result = await updateJob(editingId, normalizedForm);
+                if (currentEditingId) {
+                  const result = await updateJob(currentEditingId, normalizedForm);
 
                   if (!result.ok) {
                     setError(result.error ?? 'Failed to update job.');
@@ -79,7 +80,8 @@ export function JobsManager({
                   }
 
                   const updatedJob = result.data;
-                  setJobs((current) => current.map((job) => (job.id === editingId ? updatedJob : job)));
+                  setJobs((current) => current.map((job) => (job.id === currentEditingId ? updatedJob : job)));
+                  resetForm();
                 } else {
                   const result = await createJob(normalizedForm);
 
@@ -95,9 +97,8 @@ export function JobsManager({
 
                   const createdJob = result.data;
                   setJobs((current) => [...current, createdJob]);
+                  resetForm();
                 }
-
-                resetForm();
               });
             }}
           >
