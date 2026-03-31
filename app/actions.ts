@@ -314,7 +314,7 @@ async function updateTrackedPurchaseOrderStatus(
   });
 
   if (!trackedPo) {
-    redirect("/alerts?error=invalid-alert");
+    redirect("/po-alerts?error=invalid-alert");
   }
 
   if (role === "PM") {
@@ -323,7 +323,7 @@ async function updateTrackedPurchaseOrderStatus(
       !trackedPo.ownerId ||
       trackedPo.ownerId !== currentUser.id
     ) {
-      redirect("/alerts?error=invalid-alert");
+      redirect("/po-alerts?error=invalid-alert");
     }
   }
 
@@ -372,6 +372,48 @@ async function updateTrackedPurchaseOrderStatus(
   revalidatePath("/dashboard");
   revalidatePath("/po-alerts");
   revalidatePath("/receive-materials");
+}
+
+function toExpectedPurchaseOrderRecord(
+  row: Prisma.ExpectedPurchaseOrderGetPayload<{
+    include: {
+      owner: { select: { email: true } };
+      job: { select: { number: true; name: true } };
+      alerts: {
+        include: {
+          receivingRecord: {
+            include: { material: { select: { name: true; sku: true } } };
+          };
+        };
+        orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }];
+        take: 1;
+      };
+    };
+  }>,
+): ExpectedPurchaseOrderRecord {
+  return {
+    id: row.id,
+    ownerId: row.ownerId,
+    ownerEmail: row.owner?.email ?? "Unassigned",
+    poNumber: row.poNumber,
+    normalizedPoNumber: row.normalizedPoNumber,
+    jobId: row.jobId,
+    jobLabel: row.job ? `${row.job.number} — ${row.job.name}` : "—",
+    note: row.note ?? "",
+    status: serializeAlertStatus(row.status),
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    lastTriggeredAt: row.lastTriggeredAt?.toISOString() ?? null,
+    seenAt: row.seenAt?.toISOString() ?? null,
+    resolvedAt: row.resolvedAt?.toISOString() ?? null,
+    triggerCount: row.triggerCount,
+    latestAlertId: row.alerts[0]?.id ?? null,
+    latestAlertMessage: row.alerts[0]?.message ?? "",
+    latestAlertReceiptId: row.alerts[0]?.receivingRecordId ?? null,
+    latestAlertInvoiceNumber: row.alerts[0]?.receivingRecord.invoiceNumber ?? "—",
+    latestAlertMaterialName: row.alerts[0]?.receivingRecord.material.name ?? "—",
+    latestAlertMaterialSku: row.alerts[0]?.receivingRecord.material.sku ?? "—",
+  };
 }
 
 function formatExpectedPoMutationError(error: unknown): string {
@@ -1012,41 +1054,16 @@ export async function listExpectedPurchaseOrders(
       orderBy: [{ createdAt: "desc" }, { poNumber: "asc" }],
     });
 
-    return {
-      data: rows.map((row) => ({
-        id: row.id,
-        ownerId: row.ownerId,
-        ownerEmail: row.owner?.email ?? "Unassigned",
-        poNumber: row.poNumber,
-        normalizedPoNumber: row.normalizedPoNumber,
-        jobId: row.jobId,
-        jobLabel: row.job ? `${row.job.number} — ${row.job.name}` : "—",
-        note: row.note ?? "",
-        status: serializeAlertStatus(row.status),
-        createdAt: row.createdAt.toISOString(),
-        updatedAt: row.updatedAt.toISOString(),
-        lastTriggeredAt: row.lastTriggeredAt?.toISOString() ?? null,
-        seenAt: row.seenAt?.toISOString() ?? null,
-        resolvedAt: row.resolvedAt?.toISOString() ?? null,
-        triggerCount: row.triggerCount,
-        latestAlertId: row.alerts[0]?.id ?? null,
-        latestAlertMessage: row.alerts[0]?.message ?? "",
-        latestAlertReceiptId: row.alerts[0]?.receivingRecordId ?? null,
-        latestAlertInvoiceNumber:
-          row.alerts[0]?.receivingRecord.invoiceNumber ?? "—",
-        latestAlertMaterialName:
-          row.alerts[0]?.receivingRecord.material.name ?? "—",
-        latestAlertMaterialSku:
-          row.alerts[0]?.receivingRecord.material.sku ?? "—",
-      })),
-    };
+    return { data: rows.map(toExpectedPurchaseOrderRecord) };
   } catch (error) {
     console.error("Failed to load tracked PO numbers:", error);
     return { data: [] };
   }
 }
 
-export async function createExpectedPurchaseOrder(formData: FormData) {
+export async function createExpectedPurchaseOrder(
+  formData: FormData,
+): Promise<ActionResult<ExpectedPurchaseOrderRecord>> {
   await requireRole("ADMIN", "PM");
 
   const poNumber = String(formData.get("poNumber") ?? "").trim();
@@ -1056,7 +1073,7 @@ export async function createExpectedPurchaseOrder(formData: FormData) {
   const jobId = jobIdValue || null;
 
   if (!poNumber) {
-    redirect("/po-alerts?error=missing-po-number");
+    return { ok: false, error: "PO number is required." };
   }
 
   if (jobId) {
@@ -1065,14 +1082,14 @@ export async function createExpectedPurchaseOrder(formData: FormData) {
       select: { status: true },
     });
     if (!job) {
-      redirect("/po-alerts?error=invalid-job");
+      return { ok: false, error: "Selected related job was not found." };
     }
   }
 
   try {
     const currentUser = await getCurrentSessionUser();
 
-    await prisma.expectedPurchaseOrder.create({
+    const created = await prisma.expectedPurchaseOrder.create({
       data: {
         poNumber,
         normalizedPoNumber,
@@ -1080,19 +1097,106 @@ export async function createExpectedPurchaseOrder(formData: FormData) {
         note: note || null,
         ownerId: currentUser?.id ?? null,
       },
+      include: {
+        owner: { select: { email: true } },
+        job: { select: { number: true, name: true } },
+        alerts: {
+          include: {
+            receivingRecord: {
+              include: { material: { select: { name: true, sku: true } } },
+            },
+          },
+          orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+          take: 1,
+        },
+      },
     });
+
+    revalidatePath("/po-alerts");
+    revalidatePath("/alerts");
+    revalidatePath("/dashboard");
+    revalidatePath("/receive-materials");
+
+    return { ok: true, data: toExpectedPurchaseOrderRecord(created) };
   } catch (error) {
     console.error("Failed to create tracked PO:", error);
-    redirect(
-      `/po-alerts?error=save-failed&message=${encodeURIComponent(formatExpectedPoMutationError(error))}`,
-    );
+    return { ok: false, error: formatExpectedPoMutationError(error) };
+  }
+}
+
+export async function updateExpectedPurchaseOrder(
+  id: string,
+  payload: { poNumber: string; jobId: string | null; note: string },
+): Promise<ActionResult<ExpectedPurchaseOrderRecord>> {
+  await requireRole("ADMIN", "PM");
+
+  const poNumber = payload.poNumber.trim();
+  const normalizedPoNumber = normalizeTrackedPoNumber(poNumber);
+  const jobId = payload.jobId?.trim() ? payload.jobId.trim() : null;
+  const note = payload.note.trim();
+
+  if (!poNumber) {
+    return { ok: false, error: "PO number is required." };
   }
 
-  revalidatePath("/po-alerts");
-  revalidatePath("/alerts");
-  revalidatePath("/dashboard");
-  revalidatePath("/receive-materials");
-  redirect("/po-alerts?success=1");
+  if (jobId) {
+    const job = await prisma.job.findUnique({
+      where: { id: jobId },
+      select: { id: true },
+    });
+    if (!job) {
+      return { ok: false, error: "Selected related job was not found." };
+    }
+  }
+
+  try {
+    const updated = await prisma.expectedPurchaseOrder.update({
+      where: { id },
+      data: {
+        poNumber,
+        normalizedPoNumber,
+        jobId,
+        note: note || null,
+      },
+      include: {
+        owner: { select: { email: true } },
+        job: { select: { number: true, name: true } },
+        alerts: {
+          include: {
+            receivingRecord: {
+              include: { material: { select: { name: true, sku: true } } },
+            },
+          },
+          orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+          take: 1,
+        },
+      },
+    });
+
+    revalidatePath("/po-alerts");
+    revalidatePath("/alerts");
+    revalidatePath("/dashboard");
+    revalidatePath("/receive-materials");
+    return { ok: true, data: toExpectedPurchaseOrderRecord(updated) };
+  } catch (error) {
+    console.error("Failed to update tracked PO:", error);
+    return { ok: false, error: formatExpectedPoMutationError(error) };
+  }
+}
+
+export async function setExpectedPurchaseOrderStatus(
+  expectedPoId: string,
+  status: AlertStatus,
+): Promise<ActionResult> {
+  await requireRole("ADMIN", "PM");
+  const role = await getCurrentRole();
+
+  if (!expectedPoId) {
+    return { ok: false, error: "The selected PO alert was not found." };
+  }
+
+  await updateTrackedPurchaseOrderStatus(expectedPoId, status, role);
+  return { ok: true };
 }
 
 export async function markPurchaseOrderAlertSeen(formData: FormData) {
@@ -1102,12 +1206,12 @@ export async function markPurchaseOrderAlertSeen(formData: FormData) {
   const role = await getCurrentRole();
 
   if (!expectedPoId) {
-    redirect("/alerts?error=invalid-alert");
+    redirect("/po-alerts?error=invalid-alert");
   }
 
   await updateTrackedPurchaseOrderStatus(expectedPoId, "SEEN", role);
 
-  redirect(`/alerts?role=${encodeURIComponent(role)}&success=seen`);
+  redirect(`/po-alerts?role=${encodeURIComponent(role)}&success=seen`);
 }
 
 export async function markPurchaseOrderAlertResolved(formData: FormData) {
@@ -1117,12 +1221,12 @@ export async function markPurchaseOrderAlertResolved(formData: FormData) {
   const role = await getCurrentRole();
 
   if (!expectedPoId) {
-    redirect("/alerts?error=invalid-alert");
+    redirect("/po-alerts?error=invalid-alert");
   }
 
   await updateTrackedPurchaseOrderStatus(expectedPoId, "RESOLVED", role);
 
-  redirect(`/alerts?role=${encodeURIComponent(role)}&success=resolved`);
+  redirect(`/po-alerts?role=${encodeURIComponent(role)}&success=resolved`);
 }
 
 export async function listPurchaseOrderAlerts(
