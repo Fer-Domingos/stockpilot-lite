@@ -217,6 +217,11 @@ type ActionResult<T = undefined> = {
 
 type MaterialPayload = Omit<MaterialRecord, "id" | "quantity">;
 type JobPayload = Omit<JobRecord, "id">;
+type ExpectedPurchaseOrderPayload = {
+  poNumber: string;
+  jobId: string | null;
+  note: string;
+};
 
 type ParsedLocation = {
   locationType: InventoryLocationType;
@@ -1093,6 +1098,126 @@ export async function createExpectedPurchaseOrder(formData: FormData) {
   revalidatePath("/dashboard");
   revalidatePath("/receive-materials");
   redirect("/po-alerts?success=1");
+}
+
+export async function updateExpectedPurchaseOrder(
+  id: string,
+  payload: ExpectedPurchaseOrderPayload,
+): Promise<ActionResult<ExpectedPurchaseOrderRecord>> {
+  try {
+    await requireRole("ADMIN");
+
+    const poNumber = payload.poNumber.trim();
+    const normalizedPoNumber = normalizeTrackedPoNumber(poNumber);
+    const jobId = payload.jobId?.trim() ? payload.jobId.trim() : null;
+    const note = payload.note.trim();
+
+    if (!poNumber) {
+      return { ok: false, error: "PO number is required." };
+    }
+
+    if (jobId) {
+      const job = await prisma.job.findUnique({
+        where: { id: jobId },
+        select: { id: true },
+      });
+
+      if (!job) {
+        return { ok: false, error: "Selected related job was not found." };
+      }
+    }
+
+    const row = await prisma.expectedPurchaseOrder.update({
+      where: { id },
+      data: {
+        poNumber,
+        normalizedPoNumber,
+        jobId,
+        note: note || null,
+      },
+      include: {
+        owner: {
+          select: {
+            email: true,
+          },
+        },
+        job: {
+          select: {
+            number: true,
+            name: true,
+          },
+        },
+        alerts: {
+          include: {
+            receivingRecord: {
+              include: {
+                material: {
+                  select: {
+                    name: true,
+                    sku: true,
+                  },
+                },
+              },
+            },
+          },
+          orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+          take: 1,
+        },
+      },
+    });
+
+    revalidatePath("/po-alerts");
+    revalidatePath("/alerts");
+    revalidatePath("/dashboard");
+    revalidatePath("/receive-materials");
+
+    return {
+      ok: true,
+      data: {
+        id: row.id,
+        ownerId: row.ownerId,
+        ownerEmail: row.owner?.email ?? "Unassigned",
+        poNumber: row.poNumber,
+        normalizedPoNumber: row.normalizedPoNumber,
+        jobId: row.jobId,
+        jobLabel: row.job ? `${row.job.number} — ${row.job.name}` : "—",
+        note: row.note ?? "",
+        status: serializeAlertStatus(row.status),
+        createdAt: row.createdAt.toISOString(),
+        updatedAt: row.updatedAt.toISOString(),
+        lastTriggeredAt: row.lastTriggeredAt?.toISOString() ?? null,
+        seenAt: row.seenAt?.toISOString() ?? null,
+        resolvedAt: row.resolvedAt?.toISOString() ?? null,
+        triggerCount: row.triggerCount,
+        latestAlertId: row.alerts[0]?.id ?? null,
+        latestAlertMessage: row.alerts[0]?.message ?? "",
+        latestAlertReceiptId: row.alerts[0]?.receivingRecordId ?? null,
+        latestAlertInvoiceNumber:
+          row.alerts[0]?.receivingRecord.invoiceNumber ?? "—",
+        latestAlertMaterialName: row.alerts[0]?.receivingRecord.material.name ?? "—",
+        latestAlertMaterialSku: row.alerts[0]?.receivingRecord.material.sku ?? "—",
+      },
+    };
+  } catch (error) {
+    console.error("Failed to update tracked PO:", error);
+    return {
+      ok: false,
+      error: formatExpectedPoMutationError(error),
+    };
+  }
+}
+
+export async function cancelExpectedPurchaseOrder(
+  id: string,
+): Promise<ActionResult> {
+  try {
+    const role = await requireRole("ADMIN");
+    await updateTrackedPurchaseOrderStatus(id, "RESOLVED", role);
+    return { ok: true };
+  } catch (error) {
+    console.error("Failed to cancel tracked PO:", error);
+    return { ok: false, error: "Unable to cancel tracked PO right now." };
+  }
 }
 
 export async function markPurchaseOrderAlertSeen(formData: FormData) {

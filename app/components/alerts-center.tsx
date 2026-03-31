@@ -33,7 +33,7 @@ export function AlertsCenter({
   showTriggeredNotifications?: boolean;
 }) {
   const activeAlerts = trackedPurchaseOrders.filter((alert) => alert.status !== 'RESOLVED');
-  const canUpdateAlerts = canManageAlerts(role);
+  const canUpdateAlerts = canManageAlerts(role) && !compact;
   const rows = compact ? activeAlerts.slice(0, 6) : trackedPurchaseOrders;
   const heading = title ?? (compact ? 'Alerts Requiring Attention' : 'Alerts / Notifications');
   const subheading =
@@ -67,7 +67,7 @@ export function AlertsCenter({
               <th>Latest Notification</th>
               <th>Material</th>
               <th>Invoice / PO</th>
-              <th>Actions</th>
+              {!compact ? <th>Actions</th> : null}
             </tr>
           </thead>
           <tbody>
@@ -100,29 +100,31 @@ export function AlertsCenter({
                     <div className="muted">{alert.latestAlertMaterialSku}</div>
                   </td>
                   <td>{alert.latestAlertInvoiceNumber}</td>
-                  <td>
-                    <div className="row-actions">
-                      {canMarkSeen ? (
-                        <form className="inline-form" action={markPurchaseOrderAlertSeen}>
-                          <input type="hidden" name="expectedPoId" value={alert.id} />
-                          <input type="hidden" name="role" value={role} />
-                          <button className="secondary-button" type="submit">
-                            Mark as Seen
-                          </button>
-                        </form>
-                      ) : null}
-                      {canResolve ? (
-                        <form className="inline-form" action={markPurchaseOrderAlertResolved}>
-                          <input type="hidden" name="expectedPoId" value={alert.id} />
-                          <input type="hidden" name="role" value={role} />
-                          <button className="danger-button" type="submit">
-                            Resolve
-                          </button>
-                        </form>
-                      ) : null}
-                      {!canMarkSeen && !canResolve ? <span className="muted">No action</span> : null}
-                    </div>
-                  </td>
+                  {!compact ? (
+                    <td>
+                      <div className="row-actions">
+                        {canMarkSeen ? (
+                          <form className="inline-form" action={markPurchaseOrderAlertSeen}>
+                            <input type="hidden" name="expectedPoId" value={alert.id} />
+                            <input type="hidden" name="role" value={role} />
+                            <button className="secondary-button" type="submit">
+                              Mark as Seen
+                            </button>
+                          </form>
+                        ) : null}
+                        {canResolve ? (
+                          <form className="inline-form" action={markPurchaseOrderAlertResolved}>
+                            <input type="hidden" name="expectedPoId" value={alert.id} />
+                            <input type="hidden" name="role" value={role} />
+                            <button className="danger-button" type="submit">
+                              Resolve
+                            </button>
+                          </form>
+                        ) : null}
+                        {!canMarkSeen && !canResolve ? <span className="muted">No action</span> : null}
+                      </div>
+                    </td>
+                  ) : null}
                 </tr>
               );
             })}
