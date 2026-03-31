@@ -2,15 +2,19 @@ import { Navigation } from '@/app/components/navigation';
 import { getActiveAlertCount } from '@/app/actions';
 import { logoutAction } from '@/app/logout/actions';
 import { AppRole, rolePermissions } from '@/lib/demo-data';
+import { getAppVersion } from '@/lib/app-version';
+import { UpdateNotificationBanner } from '@/app/components/update-notification-banner';
 
 export async function AppShell({ children, role }: { children: React.ReactNode; role: AppRole }) {
   const isPm = role === 'PM';
   const activeAlertCount = await getActiveAlertCount(role);
+  const currentVersion = getAppVersion();
 
   return (
     <div className="app-shell">
       <Navigation activeAlertCount={activeAlertCount} role={role} />
       <section className="content-shell">
+        <UpdateNotificationBanner currentVersion={currentVersion} />
         <header className="top-header card">
           <div>
             <p className="muted">Cabinet Shop Inventory Platform</p>

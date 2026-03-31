@@ -93,6 +93,47 @@ a {
   background: #0e1729;
 }
 
+
+body.update-banner-visible .content-shell {
+  padding-top: 72px;
+}
+
+.update-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 18px;
+  background: #eff6ff;
+  border-bottom: 1px solid #bfdbfe;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+}
+
+.update-banner p {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #1e3a8a;
+}
+
+.update-banner-button {
+  width: auto;
+  border: 1px solid #1d4ed8;
+  background: #2563eb;
+  color: #fff;
+  padding: 6px 12px;
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.update-banner-button:hover {
+  background: #1d4ed8;
+}
+
 .content-shell {
   display: flex;
   flex-direction: column;
