@@ -344,6 +344,11 @@ async function updateTrackedPurchaseOrderStatus(
     data.resolvedAt = null;
   }
 
+  if (status === "OPEN") {
+    data.seenAt = null;
+    data.resolvedAt = null;
+  }
+
   await prisma.$transaction(async (tx) => {
     await tx.expectedPurchaseOrder.update({
       where: { id: expectedPoId },
@@ -1123,6 +1128,99 @@ export async function markPurchaseOrderAlertResolved(formData: FormData) {
   await updateTrackedPurchaseOrderStatus(expectedPoId, "RESOLVED", role);
 
   redirect(`/alerts?role=${encodeURIComponent(role)}&success=resolved`);
+}
+
+export async function updateExpectedPurchaseOrder(formData: FormData) {
+  await requireRole("ADMIN", "PM");
+
+  const expectedPoId = String(formData.get("expectedPoId") ?? "").trim();
+  const poNumber = String(formData.get("poNumber") ?? "").trim();
+  const normalizedPoNumber = normalizeTrackedPoNumber(poNumber);
+  const jobIdValue = String(formData.get("jobId") ?? "").trim();
+  const note = String(formData.get("note") ?? "").trim();
+  const jobId = jobIdValue || null;
+  const role = await getCurrentRole();
+  const currentUser = await getCurrentSessionUser();
+
+  if (!expectedPoId || !poNumber) {
+    redirect(`/po-alerts?role=${encodeURIComponent(role)}&error=missing-po-number`);
+  }
+
+  const trackedPo = await prisma.expectedPurchaseOrder.findUnique({
+    where: { id: expectedPoId },
+    select: { id: true, ownerId: true },
+  });
+
+  if (!trackedPo) {
+    redirect(`/po-alerts?role=${encodeURIComponent(role)}&error=invalid-alert`);
+  }
+
+  if (role === "PM" && (!currentUser || trackedPo.ownerId !== currentUser.id)) {
+    redirect(`/po-alerts?role=${encodeURIComponent(role)}&error=invalid-alert`);
+  }
+
+  if (jobId) {
+    const job = await prisma.job.findUnique({
+      where: { id: jobId },
+      select: { id: true },
+    });
+
+    if (!job) {
+      redirect(`/po-alerts?role=${encodeURIComponent(role)}&error=invalid-job`);
+    }
+  }
+
+  try {
+    await prisma.expectedPurchaseOrder.update({
+      where: { id: expectedPoId },
+      data: {
+        poNumber,
+        normalizedPoNumber,
+        jobId,
+        note: note || null,
+      },
+    });
+  } catch (error) {
+    console.error("Failed to update tracked PO:", error);
+    redirect(
+      `/po-alerts?role=${encodeURIComponent(role)}&error=save-failed&message=${encodeURIComponent(formatExpectedPoMutationError(error))}`,
+    );
+  }
+
+  revalidatePath("/po-alerts");
+  revalidatePath("/alerts");
+  revalidatePath("/dashboard");
+  revalidatePath("/receive-materials");
+  redirect(`/po-alerts?role=${encodeURIComponent(role)}&success=updated`);
+}
+
+export async function performExpectedPurchaseOrderAction(formData: FormData) {
+  await requireRole("ADMIN", "PM");
+
+  const expectedPoId = String(formData.get("expectedPoId") ?? "").trim();
+  const actionType = String(formData.get("actionType") ?? "").trim().toLowerCase();
+  const role = await getCurrentRole();
+
+  if (!expectedPoId) {
+    redirect(`/po-alerts?role=${encodeURIComponent(role)}&error=invalid-alert`);
+  }
+
+  if (actionType === "resolve") {
+    await updateTrackedPurchaseOrderStatus(expectedPoId, "RESOLVED", role);
+    redirect(`/po-alerts?role=${encodeURIComponent(role)}&success=resolved`);
+  }
+
+  if (actionType === "reopen") {
+    await updateTrackedPurchaseOrderStatus(expectedPoId, "OPEN", role);
+    redirect(`/po-alerts?role=${encodeURIComponent(role)}&success=reopened`);
+  }
+
+  if (actionType === "seen") {
+    await updateTrackedPurchaseOrderStatus(expectedPoId, "SEEN", role);
+    redirect(`/po-alerts?role=${encodeURIComponent(role)}&success=seen`);
+  }
+
+  redirect(`/po-alerts?role=${encodeURIComponent(role)}`);
 }
 
 export async function listPurchaseOrderAlerts(
