@@ -39,41 +39,52 @@ export function ResetPasswordForm({ userId }: ResetPasswordFormProps) {
   return (
     <form action={formAction} ref={formRef} className="reset-password-form">
       <input type="hidden" name="userId" value={userId} />
-      <div className="password-input-row">
-        <input
-          name="temporaryPassword"
-          type={showTemporaryPassword ? 'text' : 'password'}
-          minLength={8}
-          placeholder="Temporary password"
-          aria-label="Temporary password"
-          onChange={(event) => setTemporaryPassword(event.target.value)}
-          required
-        />
-        <button
-          type="button"
-          className="tertiary-button"
-          onClick={() => setShowTemporaryPassword((value) => !value)}
-        >
-          {showTemporaryPassword ? 'Hide' : 'Show'}
-        </button>
+
+      <div className="password-control-field">
+        <label htmlFor={`temporary-password-${userId}`}>Temporary password</label>
+        <div className="password-input-row">
+          <input
+            id={`temporary-password-${userId}`}
+            name="temporaryPassword"
+            type={showTemporaryPassword ? 'text' : 'password'}
+            minLength={8}
+            placeholder="Temporary password"
+            aria-label="Temporary password"
+            onChange={(event) => setTemporaryPassword(event.target.value)}
+            required
+          />
+          <button
+            type="button"
+            className="tertiary-button"
+            onClick={() => setShowTemporaryPassword((value) => !value)}
+          >
+            {showTemporaryPassword ? 'Hide' : 'Show'}
+          </button>
+        </div>
       </div>
-      <div className="password-input-row">
-        <input
-          name="confirmTemporaryPassword"
-          type={showConfirmTemporaryPassword ? 'text' : 'password'}
-          minLength={8}
-          placeholder="Confirm temporary password"
-          aria-label="Confirm temporary password"
-          required
-        />
-        <button
-          type="button"
-          className="tertiary-button"
-          onClick={() => setShowConfirmTemporaryPassword((value) => !value)}
-        >
-          {showConfirmTemporaryPassword ? 'Hide' : 'Show'}
-        </button>
+
+      <div className="password-control-field">
+        <label htmlFor={`confirm-temporary-password-${userId}`}>Confirm temporary password</label>
+        <div className="password-input-row">
+          <input
+            id={`confirm-temporary-password-${userId}`}
+            name="confirmTemporaryPassword"
+            type={showConfirmTemporaryPassword ? 'text' : 'password'}
+            minLength={8}
+            placeholder="Confirm temporary password"
+            aria-label="Confirm temporary password"
+            required
+          />
+          <button
+            type="button"
+            className="tertiary-button"
+            onClick={() => setShowConfirmTemporaryPassword((value) => !value)}
+          >
+            {showConfirmTemporaryPassword ? 'Hide' : 'Show'}
+          </button>
+        </div>
       </div>
+
       <PasswordGuidance password={temporaryPassword} />
       <ResetPasswordButton />
       {state.error ? <p className="form-feedback form-feedback-error">{state.error}</p> : null}

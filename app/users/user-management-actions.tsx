@@ -59,12 +59,15 @@ export function UserManagementActions({
 
   return (
     <div className="user-management-actions">
-      <form action={roleFormAction} className="user-role-form inline-form">
+      <form action={roleFormAction} className="user-role-form">
         <input type="hidden" name="userId" value={userId} />
-        <select name="role" defaultValue={currentRole} aria-label="User role">
+        <label className="user-action-field">
+          <span>Role</span>
+          <select name="role" defaultValue={currentRole} aria-label="User role">
           <option value="ADMIN">ADMIN</option>
           <option value="PM">PM</option>
         </select>
+        </label>
         <RoleSubmitButton />
       </form>
       {roleState.error ? <p className="form-feedback form-feedback-error">{roleState.error}</p> : null}
@@ -73,7 +76,7 @@ export function UserManagementActions({
       <form
         action={deleteFormAction}
         ref={deleteFormRef}
-        className="inline-form"
+        className="user-remove-form"
         onSubmit={(event) => {
           if (removeDisabled) {
             event.preventDefault();
