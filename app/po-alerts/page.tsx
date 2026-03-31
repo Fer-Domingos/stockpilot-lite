@@ -40,7 +40,12 @@ export default async function PurchaseOrderAlertsPage({
     <AppShell role={role}>
       {errorMessage ? <p style={{ color: '#b42318', marginBottom: '0.75rem' }}>{errorMessage}</p> : null}
       {successMessage ? <p style={{ color: '#027a48', marginBottom: '0.75rem' }}>{successMessage}</p> : null}
-      <PoTrackerManager jobs={openJobs} trackedPurchaseOrders={trackedPurchaseOrders} role={role} />
+      <PoTrackerManager
+        jobs={openJobs}
+        trackedPurchaseOrders={trackedPurchaseOrders}
+        role={role}
+        clearEditingOnLoad={searchParams.success === 'updated'}
+      />
       <AlertsCenter trackedPurchaseOrders={trackedPurchaseOrders} triggeredAlerts={alerts} role={role} compact showHeaderLink />
     </AppShell>
   );
