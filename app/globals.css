@@ -177,6 +177,43 @@ a {
   overflow-x: auto;
 }
 
+.update-banner {
+  position: fixed;
+  top: 0;
+  left: 270px;
+  right: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 18px;
+  background: #eff6ff;
+  border-bottom: 1px solid #bfdbfe;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+}
+
+.update-banner p {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #1e3a8a;
+}
+
+.update-banner button {
+  border: 1px solid #2563eb;
+  background: #2563eb;
+  color: #fff;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.update-banner button:hover {
+  background: #1d4ed8;
+}
+
+
 @media (max-width: 960px) {
   .app-shell {
     grid-template-columns: 1fr;
@@ -185,6 +222,10 @@ a {
   .sidebar {
     border-right: 0;
     border-bottom: 1px solid #182338;
+  }
+
+  .update-banner {
+    left: 0;
   }
 
   .sidebar nav {
