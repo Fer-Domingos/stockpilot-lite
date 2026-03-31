@@ -88,19 +88,6 @@ export type PurchaseOrderAlertRecord = {
 
 export type InventoryTransactionRecord = InventoryTransactionView;
 
-export type InAppNotificationRecord = {
-  id: string;
-  recipientId: string;
-  recipientEmail: string;
-  expectedPoId: string | null;
-  poNumber: string;
-  title: string;
-  message: string;
-  isRead: boolean;
-  createdAt: string;
-  readAt: string | null;
-};
-
 export type InventoryBalanceView = {
   materialId: string;
   materialSku: string;
@@ -130,7 +117,6 @@ export type DashboardView = {
   inventoryRows: InventoryAtGlanceRow[];
   trackedPoAlerts: ExpectedPurchaseOrderRecord[];
   poAlerts: PurchaseOrderAlertRecord[];
-  notifications: InAppNotificationRecord[];
   activeAlertCount: number;
 };
 
@@ -312,21 +298,6 @@ async function buildAlertAccessFilter(role: AppRole) {
   return { ownerId: currentUser.id };
 }
 
-async function buildNotificationAccessFilter(role: AppRole) {
-  if (role === "ADMIN") {
-    return {};
-  }
-
-  const currentUser = await getCurrentSessionUser();
-
-  if (!currentUser) {
-    return { recipientId: "__missing_user__" };
-  }
-
-  return { recipientId: currentUser.id };
-}
-
-
 async function updateTrackedPurchaseOrderStatus(
   expectedPoId: string,
   status: AlertStatus,
@@ -338,8 +309,6 @@ async function updateTrackedPurchaseOrderStatus(
     select: {
       id: true,
       ownerId: true,
-      poNumber: true,
-      status: true,
       seenAt: true,
     },
   });
@@ -402,22 +371,6 @@ async function updateTrackedPurchaseOrderStatus(
         resolvedAt: status === "RESOLVED" ? now : null,
       },
     });
-
-    if (
-      status === "RESOLVED" &&
-      trackedPo.status !== "RESOLVED" &&
-      trackedPo.ownerId
-    ) {
-      await tx.inAppNotification.create({
-        data: {
-          recipientId: trackedPo.ownerId,
-          type: "PO_ALERT_DONE",
-          expectedPoId: trackedPo.id,
-          title: `PO ${trackedPo.poNumber}`,
-          message: "Material received. Your PO alert has been fulfilled.",
-        },
-      });
-    }
   });
 
   revalidatePath("/alerts");
@@ -1341,86 +1294,6 @@ export async function listPurchaseOrderAlerts(
   }
 }
 
-export async function listInAppNotifications(
-  limit = 20,
-  role: AppRole = "ADMIN",
-): Promise<{ data: InAppNotificationRecord[] }> {
-  noStore();
-
-  try {
-    const accessFilter = await buildNotificationAccessFilter(role);
-
-    const notifications = await prisma.inAppNotification.findMany({
-      where: accessFilter,
-      include: {
-        recipient: {
-          select: { email: true },
-        },
-        expectedPo: {
-          select: { poNumber: true },
-        },
-      },
-      orderBy: [{ createdAt: "desc" }],
-      take: limit,
-    });
-
-    return {
-      data: notifications.map((notification) => ({
-        id: notification.id,
-        recipientId: notification.recipientId,
-        recipientEmail: notification.recipient.email,
-        expectedPoId: notification.expectedPoId,
-        poNumber: notification.expectedPo?.poNumber ?? "—",
-        title: notification.title,
-        message: notification.message,
-        isRead: notification.isRead,
-        createdAt: notification.createdAt.toISOString(),
-        readAt: notification.readAt?.toISOString() ?? null,
-      })),
-    };
-  } catch (error) {
-    console.error("Failed to load in-app notifications:", error);
-    return { data: [] };
-  }
-}
-
-export async function markInAppNotificationRead(formData: FormData) {
-  await requireRole("ADMIN", "PM");
-
-  const notificationId = String(formData.get("notificationId") ?? "").trim();
-  const role = await getCurrentRole();
-  const currentUser = await getCurrentSessionUser();
-
-  if (!notificationId) {
-    redirect(`/alerts?role=${encodeURIComponent(role)}&error=invalid-notification`);
-  }
-
-  const notification = await prisma.inAppNotification.findUnique({
-    where: { id: notificationId },
-    select: { id: true, recipientId: true },
-  });
-
-  if (!notification) {
-    redirect(`/alerts?role=${encodeURIComponent(role)}&error=invalid-notification`);
-  }
-
-  if (role === "PM" && (!currentUser || notification.recipientId !== currentUser.id)) {
-    redirect(`/alerts?role=${encodeURIComponent(role)}&error=invalid-notification`);
-  }
-
-  await prisma.inAppNotification.update({
-    where: { id: notificationId },
-    data: {
-      isRead: true,
-      readAt: new Date(),
-    },
-  });
-
-  revalidatePath("/alerts");
-  revalidatePath("/dashboard");
-  redirect(`/alerts?role=${encodeURIComponent(role)}&success=notification-read`);
-}
-
 export async function receiveMaterial(formData: FormData) {
   try {
     await requireRole("ADMIN");
@@ -2198,7 +2071,6 @@ export async function getDashboardData(
       txns,
       trackedPoAlerts,
       poAlerts,
-      notifications,
       activeAlertCount,
     ] = await Promise.all([
       prisma.material.count(),
@@ -2228,7 +2100,6 @@ export async function getDashboardData(
       listInventoryTransactions(),
       listExpectedPurchaseOrders(role),
       listPurchaseOrderAlerts(6, role),
-      listInAppNotifications(6, role),
       getActiveAlertCount(role),
     ]);
 
@@ -2262,7 +2133,6 @@ export async function getDashboardData(
       inventoryRows,
       trackedPoAlerts: trackedPoAlerts.data,
       poAlerts: poAlerts.data,
-      notifications: notifications.data,
       activeAlertCount,
     };
   } catch (error) {
@@ -2276,7 +2146,6 @@ export async function getDashboardData(
       inventoryRows: [],
       trackedPoAlerts: [],
       poAlerts: [],
-      notifications: [],
       activeAlertCount: 0,
     };
   }
