@@ -625,3 +625,24 @@ form {
 .change-password-form {
   max-width: 460px;
 }
+
+.user-management-actions {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.user-role-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.user-role-form select {
+  width: auto;
+  min-width: 110px;
+}
+
+.user-management-actions .form-feedback {
+  margin: 0;
+}

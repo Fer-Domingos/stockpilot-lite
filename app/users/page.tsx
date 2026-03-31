@@ -1,9 +1,12 @@
 import { redirect } from 'next/navigation';
+import { cookies } from 'next/headers';
 
 import { AppShell } from '@/app/components/app-shell';
 import { CreateUserForm } from '@/app/users/create-user-form';
 import { ResetPasswordForm } from '@/app/users/reset-password-form';
+import { UserManagementActions } from '@/app/users/user-management-actions';
 import { prisma } from '@/lib/prisma';
+import { authConfig, decodeSession } from '@/lib/session';
 import { getRole } from '@/lib/role';
 
 export const dynamic = 'force-dynamic';
@@ -15,6 +18,9 @@ export default async function UsersPage() {
     redirect('/dashboard');
   }
 
+  const sessionToken = cookies().get(authConfig.sessionCookieName)?.value;
+  const session = await decodeSession(sessionToken);
+
   const users = await prisma.adminUser.findMany({
     orderBy: [{ role: 'asc' }, { name: 'asc' }, { email: 'asc' }],
     select: {
@@ -25,6 +31,8 @@ export default async function UsersPage() {
       createdAt: true,
     },
   });
+
+  const adminCount = users.filter((user) => user.role === 'ADMIN').length;
 
   return (
     <AppShell role={role}>
@@ -56,6 +64,18 @@ export default async function UsersPage() {
                 <td>{user.role}</td>
                 <td>{new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' }).format(user.createdAt)}</td>
                 <td>
+                  <UserManagementActions
+                    userId={user.id}
+                    currentRole={user.role}
+                    isCurrentUser={session?.email === user.email}
+                    removeDisabledReason={
+                      user.email === 'admin@stockpilot.com'
+                        ? 'The seeded system admin cannot be removed.'
+                        : user.role === 'ADMIN' && adminCount <= 1
+                          ? 'At least one admin account must remain.'
+                          : undefined
+                    }
+                  />
                   <ResetPasswordForm userId={user.id} />
                 </td>
               </tr>
