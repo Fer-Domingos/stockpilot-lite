@@ -47,8 +47,8 @@ export function AlertsCenter({
           <p className="muted">{subheading}</p>
         </div>
         {showHeaderLink ? (
-          <Link className="ghost-button" href={{ pathname: '/alerts', query: { role } }}>
-            Open Alerts Page
+          <Link className="ghost-button" href={{ pathname: '/po-alerts', query: { role } }}>
+            Open PO Alerts
           </Link>
         ) : null}
       </div>
