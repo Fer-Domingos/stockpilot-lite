@@ -14,8 +14,8 @@ const linksByRole: Record<AppRole, Array<{ href: string; label: string; hasCount
     { href: '/receive-materials', label: 'Receive Materials' },
     { href: '/transfer-materials', label: 'Transfer Materials' },
     { href: '/issue-materials', label: 'Issue Materials' },
-    { href: '/po-alerts', label: 'PO Alerts' },
-    { href: '/alerts', label: 'Alerts', hasCounter: true },
+    { href: '/po-alerts', label: 'PO Alerts', hasCounter: true },
+    { href: '/alerts', label: 'Alerts' },
     { href: '/history', label: 'History' },
     { href: '/reports', label: 'Reports' },
     { href: '/users', label: 'Users' },
@@ -24,8 +24,8 @@ const linksByRole: Record<AppRole, Array<{ href: string; label: string; hasCount
   PM: [
     { href: '/dashboard', label: 'Dashboard' },
     { href: '/inventory', label: 'Inventory' },
-    { href: '/po-alerts', label: 'PO Alerts' },
-    { href: '/alerts', label: 'Alerts', hasCounter: true },
+    { href: '/po-alerts', label: 'PO Alerts', hasCounter: true },
+    { href: '/alerts', label: 'Alerts' },
     { href: '/history', label: 'History' },
     { href: '/reports', label: 'Reports' },
     { href: '/account', label: 'My Account' }

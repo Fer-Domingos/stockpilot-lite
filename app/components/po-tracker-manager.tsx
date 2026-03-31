@@ -1,6 +1,8 @@
 'use client';
 
-import { createExpectedPurchaseOrder, ExpectedPurchaseOrderRecord, JobRecord } from '@/app/actions';
+import { useState } from 'react';
+
+import { createExpectedPurchaseOrder, ExpectedPurchaseOrderRecord, JobRecord, updateExpectedPurchaseOrder } from '@/app/actions';
 import { AppRole } from '@/lib/demo-data';
 import { AlertStatusBadge } from '@/app/components/alert-status-badge';
 
@@ -13,6 +15,8 @@ export function PoTrackerManager({
   trackedPurchaseOrders: ExpectedPurchaseOrderRecord[];
   role: AppRole;
 }) {
+  const [editingId, setEditingId] = useState<string | null>(null);
+
   return (
     <>
       <section className="card">
@@ -58,12 +62,13 @@ export function PoTrackerManager({
               <th>Latest Trigger</th>
               <th>Latest Notification</th>
               <th>Added</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
             {trackedPurchaseOrders.length === 0 ? (
               <tr>
-                <td colSpan={7} className="muted">No tracked PO numbers yet.</td>
+                <td colSpan={8} className="muted">No tracked PO numbers yet.</td>
               </tr>
             ) : (
               trackedPurchaseOrders.map((entry) => (
@@ -81,6 +86,33 @@ export function PoTrackerManager({
                   <td>{entry.lastTriggeredAt ? new Date(entry.lastTriggeredAt).toLocaleString() : '—'}</td>
                   <td>{entry.latestAlertMessage || 'Awaiting matching receipt.'}</td>
                   <td>{new Date(entry.createdAt).toLocaleString()}</td>
+                  <td>
+                    {editingId === entry.id ? (
+                      <form action={updateExpectedPurchaseOrder} className="inline-form" style={{ display: 'grid', gap: '0.5rem' }}>
+                        <input type="hidden" name="expectedPoId" value={entry.id} />
+                        <input type="text" name="poNumber" defaultValue={entry.poNumber} required aria-label="PO Number" />
+                        <select name="jobId" defaultValue={entry.jobId ?? ''} aria-label="Related Job">
+                          <option value="">No related job</option>
+                          {jobs.map((job) => (
+                            <option key={job.id} value={job.id}>
+                              {job.number} — {job.name}
+                            </option>
+                          ))}
+                        </select>
+                        <textarea name="note" rows={2} defaultValue={entry.note} placeholder="Optional note" aria-label="Note" />
+                        <div className="row-actions">
+                          <button className="secondary-button" type="button" onClick={() => setEditingId(null)}>
+                            Cancel
+                          </button>
+                          <button type="submit">Save</button>
+                        </div>
+                      </form>
+                    ) : (
+                      <button className="secondary-button" type="button" onClick={() => setEditingId(entry.id)}>
+                        Edit
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))
             )}
