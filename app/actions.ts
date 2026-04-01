@@ -112,6 +112,7 @@ export type DashboardView = {
   totalSku: number;
   lowStock: number;
   openJobs: number;
+  closedJobs: number;
   totalInventoryUnits: number;
   recentTransactions: InventoryTransactionRecord[];
   inventoryRows: InventoryAtGlanceRow[];
@@ -2152,6 +2153,7 @@ export async function getDashboardData(
     const [
       totalSku,
       openJobs,
+      closedJobs,
       onHandAggregate,
       materials,
       balanceSums,
@@ -2163,6 +2165,7 @@ export async function getDashboardData(
     ] = await Promise.all([
       prisma.material.count(),
       prisma.job.count({ where: { status: "OPEN" } }),
+      prisma.job.count({ where: { status: "CLOSED" } }),
       prisma.inventoryBalance.aggregate({ _sum: { quantity: true } }),
       prisma.material.findMany({
         select: {
@@ -2216,6 +2219,7 @@ export async function getDashboardData(
       totalSku,
       lowStock,
       openJobs,
+      closedJobs,
       totalInventoryUnits: onHandAggregate._sum.quantity ?? 0,
       recentTransactions: txns.data.slice(0, 10),
       inventoryRows,
@@ -2229,6 +2233,7 @@ export async function getDashboardData(
       totalSku: 0,
       lowStock: 0,
       openJobs: 0,
+      closedJobs: 0,
       totalInventoryUnits: 0,
       recentTransactions: [],
       inventoryRows: [],
