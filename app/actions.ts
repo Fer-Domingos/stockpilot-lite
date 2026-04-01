@@ -1673,6 +1673,199 @@ export async function receiveMaterial(formData: FormData) {
   redirect("/receive-materials?success=1");
 }
 
+type InvoiceImportRowInput = {
+  originalLine: string;
+  materialId: string | null;
+  quantity: string;
+  unit: string;
+  destinationType: "SHOP" | "JOB";
+  jobId: string;
+  invoiceNumber: string;
+  vendorName: string;
+};
+
+function normalizeInvoiceImportRows(rowsPayload: string): InvoiceImportRowInput[] {
+  try {
+    const parsedRows = JSON.parse(rowsPayload) as unknown;
+
+    if (!Array.isArray(parsedRows)) {
+      return [];
+    }
+
+    return parsedRows
+      .map((row) => {
+        if (!row || typeof row !== "object") {
+          return null;
+        }
+
+        const entry = row as Record<string, unknown>;
+
+        return {
+          originalLine: String(entry.originalLine ?? "").trim(),
+          materialId: entry.materialId ? String(entry.materialId).trim() : null,
+          quantity: String(entry.quantity ?? "").trim(),
+          unit: String(entry.unit ?? "UNIT").trim() || "UNIT",
+          destinationType: entry.destinationType === "JOB" ? "JOB" : "SHOP",
+          jobId: String(entry.jobId ?? "").trim(),
+          invoiceNumber: String(entry.invoiceNumber ?? "").trim(),
+          vendorName: String(entry.vendorName ?? "").trim(),
+        } satisfies InvoiceImportRowInput;
+      })
+      .filter((row): row is InvoiceImportRowInput => Boolean(row));
+  } catch {
+    return [];
+  }
+}
+
+export async function receiveMaterialsFromInvoice(formData: FormData) {
+  try {
+    await requireRole("ADMIN");
+  } catch (error) {
+    redirect(
+      `/receive-materials?error=save-failed&message=${encodeURIComponent(error instanceof Error ? error.message : "Unauthorized.")}`,
+    );
+  }
+
+  const rowsPayload = String(formData.get("rowsPayload") ?? "");
+  const parsedRows = normalizeInvoiceImportRows(rowsPayload);
+
+  if (parsedRows.length === 0) {
+    redirect(
+      "/receive-materials?error=save-failed&message=No%20confirmed%20rows%20were%20submitted.",
+    );
+  }
+
+  const materialIds = Array.from(
+    new Set(
+      parsedRows
+        .map((row) => row.materialId)
+        .filter((materialId): materialId is string => Boolean(materialId)),
+    ),
+  );
+  const materials = await prisma.material.findMany({
+    where: { id: { in: materialIds } },
+    select: { id: true },
+  });
+  const validMaterialIds = new Set(materials.map((material) => material.id));
+
+  const openJobs = await prisma.job.findMany({
+    where: { status: "OPEN" },
+    select: { id: true },
+  });
+  const openJobIds = new Set(openJobs.map((job) => job.id));
+
+  const rowsToPost = parsedRows
+    .map((row) => {
+      const quantity = Math.floor(Number(row.quantity));
+      const materialId = row.materialId ?? "";
+      const hasMaterial = validMaterialIds.has(materialId);
+      const hasQuantity = Number.isFinite(quantity) && quantity > 0;
+      const needsOpenJob = row.destinationType === "JOB";
+      const hasValidJob = !needsOpenJob || openJobIds.has(row.jobId);
+
+      if (!hasMaterial || !hasQuantity || !hasValidJob) {
+        return null;
+      }
+
+      return {
+        materialId,
+        quantity,
+        destinationType: row.destinationType,
+        jobId: needsOpenJob ? row.jobId : null,
+        invoiceNumber: row.invoiceNumber,
+        vendorName: row.vendorName,
+        notes: `Invoice import line: ${row.originalLine}`,
+      };
+    })
+    .filter(
+      (
+        row,
+      ): row is {
+        materialId: string;
+        quantity: number;
+        destinationType: "SHOP" | "JOB";
+        jobId: string | null;
+        invoiceNumber: string;
+        vendorName: string;
+        notes: string;
+      } => Boolean(row),
+    );
+
+  if (rowsToPost.length === 0) {
+    redirect(
+      "/receive-materials?error=save-failed&message=No%20valid%20confirmed%20rows%20to%20post.",
+    );
+  }
+
+  const receivedAt = new Date();
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      for (const row of rowsToPost) {
+        const normalizedToLocation = normalizeTransactionLocation(
+          "locationToType",
+          {
+            locationType: row.destinationType,
+            jobId: row.jobId,
+          },
+        );
+
+        const receipt = await tx.receivingRecord.create({
+          data: {
+            materialId: row.materialId,
+            quantity: row.quantity,
+            destinationType: row.destinationType,
+            jobId: row.jobId,
+            invoiceNumber: row.invoiceNumber || null,
+            vendor: row.vendorName || null,
+            notes: row.notes,
+            photoUrl: null,
+            receivedAt,
+          },
+        });
+
+        await adjustInventoryBalance(
+          tx,
+          row.materialId,
+          row.destinationType,
+          row.jobId,
+          row.quantity,
+        );
+
+        await tx.inventoryTransaction.create({
+          data: {
+            materialId: row.materialId,
+            transactionType: "RECEIVE",
+            quantity: row.quantity,
+            locationFromType: null,
+            locationFromJobId: null,
+            locationToType: normalizedToLocation.locationType,
+            locationToJobId: normalizedToLocation.jobId,
+            invoiceNumber: row.invoiceNumber || null,
+            vendor: row.vendorName || null,
+            notes: row.notes,
+            photoUrl: null,
+            receivingRecordId: receipt.id,
+            createdAt: receivedAt,
+          },
+        });
+      }
+    });
+
+    await syncMaterialQuantitiesFromBalances();
+  } catch (error) {
+    console.error("Failed to post invoice import receipts:", error);
+    redirect(
+      "/receive-materials?error=save-failed&message=Unable%20to%20post%20the%20confirmed%20invoice%20rows.",
+    );
+  }
+
+  await revalidateInventoryViews();
+  revalidatePath("/po-alerts");
+  revalidatePath("/alerts");
+  redirect(`/receive-materials?success=1&message=${encodeURIComponent(`Posted ${rowsToPost.length} invoice row(s).`)}`);
+}
+
 export async function listReceivingRecords() {
   try {
     const receipts = await prisma.receivingRecord.findMany({

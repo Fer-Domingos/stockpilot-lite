@@ -1,4 +1,5 @@
 import { AppShell } from '@/app/components/app-shell';
+import { InvoiceImportReceiveForm } from '@/app/components/invoice-import-receive-form';
 import { ReceiveMaterialForm } from '@/app/components/receive-material-form';
 import { listJobs, listMaterials, listPurchaseOrderAlerts, listReceivingRecords } from '@/app/actions';
 import { canManageInventory } from '@/lib/permissions';
@@ -27,8 +28,11 @@ export default async function ReceiveMaterialsPage({
   const openJobs = jobs.filter((job) => job.status === 'OPEN');
   const canPostReceipts = canManageInventory(role);
   const detailedMessage = searchParams.message ? decodeURIComponent(searchParams.message) : null;
-  const errorMessage = detailedMessage || (searchParams.error ? errorMessages[searchParams.error] ?? 'Unable to receive material.' : null);
+  const errorMessage = searchParams.error
+    ? detailedMessage || errorMessages[searchParams.error] || 'Unable to receive material.'
+    : null;
   const showSuccess = searchParams.success === '1';
+  const successMessage = showSuccess ? detailedMessage ?? 'Receipt posted successfully.' : null;
 
   return (
     <AppShell role={role}>
@@ -38,11 +42,23 @@ export default async function ReceiveMaterialsPage({
           <p className="muted">Capture vendor receipts with invoice, destination, and optional photo reference.</p>
         </div>
         {errorMessage ? <p style={{ color: '#b42318', marginBottom: '0.75rem' }}>{errorMessage}</p> : null}
-        {showSuccess ? <p style={{ color: '#027a48', marginBottom: '0.75rem' }}>Receipt posted successfully.</p> : null}
+        {successMessage ? <p style={{ color: '#027a48', marginBottom: '0.75rem' }}>{successMessage}</p> : null}
         {canPostReceipts ? (
           <ReceiveMaterialForm materials={materials} jobs={openJobs} />
         ) : (
           <p className="muted">PM access is read-only. Receiving is available to ADMIN users only.</p>
+        )}
+      </section>
+
+      <section className="card">
+        <div className="section-title">
+          <h3>Import from Invoice Text</h3>
+          <p className="muted">Paste raw invoice text, review mapped lines, and confirm destination and quantity before posting.</p>
+        </div>
+        {canPostReceipts ? (
+          <InvoiceImportReceiveForm materials={materials} jobs={openJobs} />
+        ) : (
+          <p className="muted">PM access is read-only. Invoice import posting is available to ADMIN users only.</p>
         )}
       </section>
 
