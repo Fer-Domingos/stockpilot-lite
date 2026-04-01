@@ -217,6 +217,11 @@ type ActionResult<T = undefined> = {
 
 type MaterialPayload = Omit<MaterialRecord, "id" | "quantity">;
 type JobPayload = Omit<JobRecord, "id">;
+type BulkCreateJobsResult = {
+  createdJobs: JobRecord[];
+  existingJobNumbers: string[];
+  invalidEntries: string[];
+};
 
 type ParsedLocation = {
   locationType: InventoryLocationType;
@@ -909,6 +914,89 @@ export async function createJob(
   } catch (error) {
     console.error("Failed to create job:", error);
     return { ok: false, error: "Unable to save job right now." };
+  }
+}
+
+export async function bulkCreateJobs(
+  payloads: JobPayload[],
+): Promise<ActionResult<BulkCreateJobsResult>> {
+  try {
+    await requireRole("ADMIN");
+
+    const normalizedPayloads = payloads
+      .map(normalizeJobPayload)
+      .filter((payload) => payload.number && payload.name);
+
+    if (!normalizedPayloads.length) {
+      return {
+        ok: true,
+        data: {
+          createdJobs: [],
+          existingJobNumbers: [],
+          invalidEntries: [],
+        },
+      };
+    }
+
+    const requestedNumbers = [
+      ...new Set(normalizedPayloads.map((payload) => payload.number)),
+    ];
+    const existingJobs = await prisma.job.findMany({
+      where: { number: { in: requestedNumbers } },
+      select: { number: true },
+    });
+    const existingNumbers = new Set(existingJobs.map((job) => job.number));
+    const seenInBatch = new Set<string>();
+
+    const createdJobs: JobRecord[] = [];
+    const existingJobNumbers: string[] = [];
+    const invalidEntries: string[] = [];
+
+    for (const payload of normalizedPayloads) {
+      if (seenInBatch.has(payload.number) || existingNumbers.has(payload.number)) {
+        existingJobNumbers.push(payload.number);
+        continue;
+      }
+
+      seenInBatch.add(payload.number);
+
+      try {
+        const created = await prisma.job.create({ data: payload });
+        createdJobs.push({
+          id: created.id,
+          number: created.number,
+          name: created.name,
+          status: statuses.includes(created.status as JobStatus)
+            ? (created.status as JobStatus)
+            : "OPEN",
+        });
+      } catch (error) {
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === "P2002"
+        ) {
+          existingJobNumbers.push(payload.number);
+          continue;
+        }
+
+        console.error("Failed to create job during bulk import:", error);
+        invalidEntries.push(payload.number);
+      }
+    }
+
+    revalidatePath("/jobs");
+
+    return {
+      ok: true,
+      data: {
+        createdJobs,
+        existingJobNumbers: [...new Set(existingJobNumbers)],
+        invalidEntries: [...new Set(invalidEntries)],
+      },
+    };
+  } catch (error) {
+    console.error("Failed to bulk create jobs:", error);
+    return { ok: false, error: "Unable to import jobs right now." };
   }
 }
 

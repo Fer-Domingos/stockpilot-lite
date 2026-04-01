@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react';
 
-import { JobRecord, JobStatus, createJob, deleteJob, updateJob } from '@/app/actions';
+import { JobRecord, JobStatus, bulkCreateJobs, createJob, deleteJob, updateJob } from '@/app/actions';
 import { AppRole } from '@/lib/demo-data';
 import { canManageInventory } from '@/lib/permissions';
 
@@ -27,6 +27,8 @@ export function JobsManager({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<JobFormState>(emptyForm);
   const [error, setError] = useState('');
+  const [bulkInput, setBulkInput] = useState('');
+  const [bulkSummary, setBulkSummary] = useState('');
   const [isPending, startTransition] = useTransition();
   const isReadOnly = !canManageInventory(role);
 
@@ -42,6 +44,45 @@ export function JobsManager({
       name: payload.name.trim(),
       status: statuses.includes(payload.status) ? payload.status : 'OPEN'
     };
+  }
+
+  function parseBulkJobs(text: string): {
+    payloads: JobFormState[];
+    invalidLines: string[];
+  } {
+    const payloads: JobFormState[] = [];
+    const invalidLines: string[] = [];
+    const lines = text.split(/\r?\n/);
+
+    for (let index = 0; index < lines.length; index += 1) {
+      const rawLine = lines[index];
+      const line = rawLine.trim();
+
+      if (!line) {
+        continue;
+      }
+
+      const match = line.match(/^(\S+)(?:\s*(?:\||-)\s*|\s+)(.+)$/);
+      if (!match) {
+        invalidLines.push(`Line ${index + 1}: ${line}`);
+        continue;
+      }
+
+      const number = match[1]?.trim() ?? '';
+      const name = match[2]?.trim() ?? '';
+      if (!number || !name) {
+        invalidLines.push(`Line ${index + 1}: ${line}`);
+        continue;
+      }
+
+      payloads.push({
+        number,
+        name,
+        status: 'OPEN'
+      });
+    }
+
+    return { payloads, invalidLines };
   }
 
   return (
@@ -134,6 +175,71 @@ export function JobsManager({
 
             <button type="submit" disabled={isPending}>
               {isPending ? 'Saving...' : editingId ? 'Save Job' : 'Add Job'}
+            </button>
+          </form>
+        </section>
+      ) : null}
+      {!isReadOnly ? (
+        <section className="card">
+          <div className="section-title">
+            <h3>Bulk Add Jobs</h3>
+          </div>
+          <p className="muted">Paste one job per line using formats like &quot;6-2533 | Job Name&quot;.</p>
+          {!!bulkSummary && <p className="muted">{bulkSummary}</p>}
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              setBulkSummary('');
+
+              const { payloads, invalidLines } = parseBulkJobs(bulkInput);
+
+              startTransition(async () => {
+                const result = await bulkCreateJobs(payloads);
+
+                if (!result.ok || !result.data) {
+                  setBulkSummary(result.error ?? 'Failed to import jobs.');
+                  return;
+                }
+
+                const createdJobs = result.data.createdJobs;
+                const existingJobNumbers = result.data.existingJobNumbers;
+                const invalidEntries = [...invalidLines, ...result.data.invalidEntries];
+
+                if (createdJobs.length > 0) {
+                  setJobs((current) => [...current, ...createdJobs]);
+                }
+
+                const summaryParts = [
+                  `${createdJobs.length} jobs created`,
+                  `${existingJobNumbers.length} skipped (already existed)`,
+                  `${invalidEntries.length} invalid lines skipped`
+                ];
+
+                const detailParts: string[] = [];
+                if (existingJobNumbers.length > 0) {
+                  detailParts.push(`Existing: ${existingJobNumbers.join(', ')}`);
+                }
+                if (invalidEntries.length > 0) {
+                  detailParts.push(`Invalid: ${invalidEntries.join(', ')}`);
+                }
+
+                setBulkSummary(
+                  `${summaryParts.join(' • ')}${detailParts.length ? ` | ${detailParts.join(' | ')}` : ''}`
+                );
+                setBulkInput('');
+              });
+            }}
+          >
+            <label htmlFor="bulkJobsInput">Paste jobs (one per line)</label>
+            <textarea
+              id="bulkJobsInput"
+              rows={8}
+              value={bulkInput}
+              onChange={(event) => setBulkInput(event.target.value)}
+              placeholder="6-2533 | Design Within Reach at Tivoli"
+            />
+            <button type="submit" disabled={isPending}>
+              {isPending ? 'Importing...' : 'Import Jobs'}
             </button>
           </form>
         </section>
