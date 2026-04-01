@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, useTransition } from 'react';
+import { useMemo, useRef, useState, useTransition } from 'react';
 
 import { JobRecord, JobStatus, bulkCreateJobs, createJob, deleteJob, updateJob } from '@/app/actions';
 import { AppRole } from '@/lib/demo-data';
@@ -78,6 +78,8 @@ export function JobsManager({
   const [bulkSummary, setBulkSummary] = useState('');
   const [jobSearch, setJobSearch] = useState('');
   const [isPending, startTransition] = useTransition();
+  const editSectionRef = useRef<HTMLElement | null>(null);
+  const jobNumberInputRef = useRef<HTMLInputElement | null>(null);
   const isReadOnly = !canManageInventory(role);
   const normalizedJobSearch = jobSearch.trim().toLowerCase();
   const filteredJobs = useMemo(() => {
@@ -148,7 +150,7 @@ export function JobsManager({
   return (
     <>
       {!isReadOnly ? (
-        <section className="card">
+        <section className="card" ref={editSectionRef}>
           <div className="section-title">
             <h3>{editingId ? 'Edit Job' : 'Create Job'}</h3>
             {editingId && (
@@ -208,6 +210,7 @@ export function JobsManager({
             <label htmlFor="jobNumber">Job Number</label>
             <input
               id="jobNumber"
+              ref={jobNumberInputRef}
               value={form.number}
               onChange={(event) => setForm((current) => ({ ...current, number: event.target.value }))}
               required
@@ -348,6 +351,10 @@ export function JobsManager({
                         onClick={() => {
                           setEditingId(job.id);
                           setForm({ number: job.number, name: job.name, status: job.status });
+                          requestAnimationFrame(() => {
+                            editSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                            jobNumberInputRef.current?.focus();
+                          });
                         }}
                       >
                         Edit
