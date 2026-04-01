@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useMemo, useState, useTransition } from 'react';
 
 import { JobRecord, JobStatus, bulkCreateJobs, createJob, deleteJob, updateJob } from '@/app/actions';
 import { AppRole } from '@/lib/demo-data';
@@ -76,8 +76,21 @@ export function JobsManager({
   const [error, setError] = useState('');
   const [bulkInput, setBulkInput] = useState('');
   const [bulkSummary, setBulkSummary] = useState('');
+  const [jobSearch, setJobSearch] = useState('');
   const [isPending, startTransition] = useTransition();
   const isReadOnly = !canManageInventory(role);
+  const normalizedJobSearch = jobSearch.trim().toLowerCase();
+  const filteredJobs = useMemo(() => {
+    if (!normalizedJobSearch) {
+      return jobs;
+    }
+
+    return jobs.filter((job) => {
+      const jobNumber = job.number.toLowerCase();
+      const jobName = job.name.toLowerCase();
+      return jobNumber.includes(normalizedJobSearch) || jobName.includes(normalizedJobSearch);
+    });
+  }, [jobs, normalizedJobSearch]);
 
   function resetForm() {
     setEditingId(null);
@@ -304,6 +317,13 @@ export function JobsManager({
           ) : null}
         </div>
         {isReadOnly ? <p className="muted">PM access is read-only. Job management actions are hidden.</p> : null}
+        <label htmlFor="jobSearch">Search Jobs</label>
+        <input
+          id="jobSearch"
+          value={jobSearch}
+          onChange={(event) => setJobSearch(event.target.value)}
+          placeholder="Search by job number or job name"
+        />
         <table>
           <thead>
             <tr>
@@ -314,7 +334,7 @@ export function JobsManager({
             </tr>
           </thead>
           <tbody>
-            {jobs.map((job) => (
+            {filteredJobs.map((job) => (
               <tr key={job.id}>
                 <td>{job.number}</td>
                 <td>{job.name}</td>
@@ -357,6 +377,13 @@ export function JobsManager({
                 ) : null}
               </tr>
             ))}
+            {filteredJobs.length === 0 ? (
+              <tr>
+                <td colSpan={isReadOnly ? 3 : 4} className="muted">
+                  No jobs found.
+                </td>
+              </tr>
+            ) : null}
           </tbody>
         </table>
       </section>
