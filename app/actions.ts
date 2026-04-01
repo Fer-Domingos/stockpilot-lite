@@ -309,6 +309,7 @@ async function updateTrackedPurchaseOrderStatus(
     select: {
       id: true,
       ownerId: true,
+      poNumber: true,
       seenAt: true,
     },
   });
@@ -372,6 +373,34 @@ async function updateTrackedPurchaseOrderStatus(
       },
     });
   });
+
+  if (status === "RESOLVED" && trackedPo.ownerId) {
+    const notificationMessage = `PO Alert ${trackedPo.poNumber} was marked Done.`;
+
+    try {
+      await prisma.$executeRaw`
+        INSERT INTO "InAppNotification" ("userId", "message", "createdAt")
+        VALUES (${trackedPo.ownerId}, ${notificationMessage}, NOW())
+      `;
+    } catch (inAppNotificationError) {
+      try {
+        await prisma.$executeRaw`
+          INSERT INTO "Notification" ("userId", "message", "createdAt")
+          VALUES (${trackedPo.ownerId}, ${notificationMessage}, NOW())
+        `;
+      } catch (notificationError) {
+        console.error(
+          "PO Alert resolved notification failed; Done flow continued safely.",
+          {
+            expectedPoId,
+            ownerId: trackedPo.ownerId,
+            inAppNotificationError,
+            notificationError,
+          },
+        );
+      }
+    }
+  }
 
   revalidatePath("/alerts");
   revalidatePath("/dashboard");
