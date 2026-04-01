@@ -12,6 +12,14 @@ export default async function DashboardPage({ searchParams }: { searchParams: { 
   const lowStockHref = searchParams.role
     ? `/inventory?${new URLSearchParams({ lowStock: 'true', role: searchParams.role }).toString()}`
     : '/inventory?lowStock=true';
+  const openJobsHref = `/jobs?${new URLSearchParams({
+    status: 'Open',
+    ...(searchParams.role ? { role: searchParams.role } : {})
+  }).toString()}`;
+  const closedJobsHref = `/jobs?${new URLSearchParams({
+    status: 'Closed',
+    ...(searchParams.role ? { role: searchParams.role } : {})
+  }).toString()}`;
 
   return (
     <AppShell role={role}>
@@ -25,14 +33,16 @@ export default async function DashboardPage({ searchParams }: { searchParams: { 
           <h3>{data.lowStock}</h3>
           <p className="muted kpi-card-link-copy">View items below minimum stock</p>
         </Link>
-        <article className="card kpi-card">
+        <Link href={openJobsHref} className="card kpi-card kpi-card-link">
           <p className="muted">Open Jobs</p>
           <h3>{data.openJobs}</h3>
-        </article>
-        <article className="card kpi-card">
+          <p className="muted kpi-card-link-copy">View open jobs</p>
+        </Link>
+        <Link href={closedJobsHref} className="card kpi-card kpi-card-link">
           <p className="muted">Closed Jobs</p>
           <h3>{data.closedJobs}</h3>
-        </article>
+          <p className="muted kpi-card-link-copy">View closed jobs</p>
+        </Link>
         <article className="card kpi-card">
           <p className="muted">Inventory Units On Hand</p>
           <h3>{data.totalInventoryUnits.toLocaleString()}</h3>
