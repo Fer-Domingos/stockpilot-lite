@@ -16,6 +16,53 @@ const emptyForm: JobFormState = {
 
 const statuses: JobStatus[] = ['OPEN', 'CLOSED'];
 
+function toComparableChunks(value: string): Array<number | string> {
+  return value
+    .trim()
+    .split(/(\d+)/)
+    .filter((part) => part.length > 0)
+    .map((part) => (/^\d+$/.test(part) ? Number(part) : part.toLowerCase()));
+}
+
+function compareJobNumbers(leftNumber: string, rightNumber: string): number {
+  const leftChunks = toComparableChunks(leftNumber);
+  const rightChunks = toComparableChunks(rightNumber);
+  const maxLength = Math.max(leftChunks.length, rightChunks.length);
+
+  for (let index = 0; index < maxLength; index += 1) {
+    const leftChunk = leftChunks[index];
+    const rightChunk = rightChunks[index];
+
+    if (leftChunk === undefined) {
+      return -1;
+    }
+
+    if (rightChunk === undefined) {
+      return 1;
+    }
+
+    if (typeof leftChunk === 'number' && typeof rightChunk === 'number') {
+      if (leftChunk !== rightChunk) {
+        return leftChunk - rightChunk;
+      }
+      continue;
+    }
+
+    const leftValue = String(leftChunk);
+    const rightValue = String(rightChunk);
+    const valueComparison = leftValue.localeCompare(rightValue);
+    if (valueComparison !== 0) {
+      return valueComparison;
+    }
+  }
+
+  return 0;
+}
+
+function sortJobsByNumber(jobEntries: JobRecord[]): JobRecord[] {
+  return [...jobEntries].sort((left, right) => compareJobNumbers(left.number, right.number));
+}
+
 export function JobsManager({
   initialJobs,
   role
@@ -23,7 +70,7 @@ export function JobsManager({
   initialJobs: JobRecord[];
   role: AppRole;
 }) {
-  const [jobs, setJobs] = useState<JobRecord[]>(initialJobs);
+  const [jobs, setJobs] = useState<JobRecord[]>(() => sortJobsByNumber(initialJobs));
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<JobFormState>(emptyForm);
   const [error, setError] = useState('');
@@ -121,7 +168,9 @@ export function JobsManager({
                   }
 
                   const updatedJob = result.data;
-                  setJobs((current) => current.map((job) => (job.id === currentEditingId ? updatedJob : job)));
+                  setJobs((current) =>
+                    sortJobsByNumber(current.map((job) => (job.id === currentEditingId ? updatedJob : job)))
+                  );
                   resetForm();
                 } else {
                   const result = await createJob(normalizedForm);
@@ -137,7 +186,7 @@ export function JobsManager({
                   }
 
                   const createdJob = result.data;
-                  setJobs((current) => [...current, createdJob]);
+                  setJobs((current) => sortJobsByNumber([...current, createdJob]));
                   resetForm();
                 }
               });
@@ -206,7 +255,7 @@ export function JobsManager({
                 const invalidEntries = [...invalidLines, ...result.data.invalidEntries];
 
                 if (createdJobs.length > 0) {
-                  setJobs((current) => [...current, ...createdJobs]);
+                  setJobs((current) => sortJobsByNumber([...current, ...createdJobs]));
                 }
 
                 const summaryParts = [
