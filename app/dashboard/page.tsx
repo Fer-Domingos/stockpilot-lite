@@ -30,6 +30,10 @@ export default async function DashboardPage({ searchParams }: { searchParams: { 
           <h3>{data.openJobs}</h3>
         </article>
         <article className="card kpi-card">
+          <p className="muted">Closed Jobs</p>
+          <h3>{data.closedJobs}</h3>
+        </article>
+        <article className="card kpi-card">
           <p className="muted">Inventory Units On Hand</p>
           <h3>{data.totalInventoryUnits.toLocaleString()}</h3>
         </article>
