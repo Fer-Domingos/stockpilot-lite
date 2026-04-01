@@ -15,6 +15,7 @@ const emptyForm: JobFormState = {
 };
 
 const statuses: JobStatus[] = ['OPEN', 'CLOSED'];
+type JobStatusFilter = 'ALL' | JobStatus;
 
 function toComparableChunks(value: string): Array<number | string> {
   return value
@@ -77,22 +78,28 @@ export function JobsManager({
   const [bulkInput, setBulkInput] = useState('');
   const [bulkSummary, setBulkSummary] = useState('');
   const [jobSearch, setJobSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<JobStatusFilter>('ALL');
   const [isPending, startTransition] = useTransition();
   const editSectionRef = useRef<HTMLElement | null>(null);
   const jobNumberInputRef = useRef<HTMLInputElement | null>(null);
   const isReadOnly = !canManageInventory(role);
   const normalizedJobSearch = jobSearch.trim().toLowerCase();
   const filteredJobs = useMemo(() => {
-    if (!normalizedJobSearch) {
-      return jobs;
-    }
-
     return jobs.filter((job) => {
+      const matchesStatus = statusFilter === 'ALL' || job.status === statusFilter;
+      if (!matchesStatus) {
+        return false;
+      }
+
+      if (!normalizedJobSearch) {
+        return true;
+      }
+
       const jobNumber = job.number.toLowerCase();
       const jobName = job.name.toLowerCase();
       return jobNumber.includes(normalizedJobSearch) || jobName.includes(normalizedJobSearch);
     });
-  }, [jobs, normalizedJobSearch]);
+  }, [jobs, normalizedJobSearch, statusFilter]);
 
   function resetForm() {
     setEditingId(null);
@@ -320,13 +327,29 @@ export function JobsManager({
           ) : null}
         </div>
         {isReadOnly ? <p className="muted">PM access is read-only. Job management actions are hidden.</p> : null}
-        <label htmlFor="jobSearch">Search Jobs</label>
-        <input
-          id="jobSearch"
-          value={jobSearch}
-          onChange={(event) => setJobSearch(event.target.value)}
-          placeholder="Search by job number or job name"
-        />
+        <div className="jobs-filter-row">
+          <div className="jobs-filter-field">
+            <label htmlFor="jobSearch">Search Jobs</label>
+            <input
+              id="jobSearch"
+              value={jobSearch}
+              onChange={(event) => setJobSearch(event.target.value)}
+              placeholder="Search by job number or job name"
+            />
+          </div>
+          <div className="jobs-filter-field jobs-status-filter-field">
+            <label htmlFor="jobStatusFilter">Status</label>
+            <select
+              id="jobStatusFilter"
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value as JobStatusFilter)}
+            >
+              <option value="ALL">All</option>
+              <option value="OPEN">Open</option>
+              <option value="CLOSED">Closed</option>
+            </select>
+          </div>
+        </div>
         <table>
           <thead>
             <tr>
