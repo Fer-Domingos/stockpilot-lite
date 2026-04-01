@@ -66,10 +66,12 @@ function sortJobsByNumber(jobEntries: JobRecord[]): JobRecord[] {
 
 export function JobsManager({
   initialJobs,
-  role
+  role,
+  initialStatusFilter = 'ALL'
 }: {
   initialJobs: JobRecord[];
   role: AppRole;
+  initialStatusFilter?: JobStatusFilter;
 }) {
   const [jobs, setJobs] = useState<JobRecord[]>(() => sortJobsByNumber(initialJobs));
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -78,7 +80,7 @@ export function JobsManager({
   const [bulkInput, setBulkInput] = useState('');
   const [bulkSummary, setBulkSummary] = useState('');
   const [jobSearch, setJobSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<JobStatusFilter>('ALL');
+  const [statusFilter, setStatusFilter] = useState<JobStatusFilter>(initialStatusFilter);
   const [isPending, startTransition] = useTransition();
   const editSectionRef = useRef<HTMLElement | null>(null);
   const jobNumberInputRef = useRef<HTMLInputElement | null>(null);
