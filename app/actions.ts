@@ -1541,6 +1541,7 @@ export async function receiveMaterial(formData: FormData) {
   const vendor = String(formData.get("vendorName") ?? "").trim();
   const notes = String(formData.get("notes") ?? "").trim();
   const photoUrl = String(formData.get("photoUrl") ?? "").trim();
+  const invoiceFileUrl = String(formData.get("invoiceFileUrl") ?? "").trim();
   const quantity = Number(formData.get("quantity") ?? 0);
 
   const missingFields: string[] = [];
@@ -1645,6 +1646,7 @@ export async function receiveMaterial(formData: FormData) {
           vendor: vendor || null,
           notes: notes || null,
           photoUrl: photoUrl || null,
+          invoiceFileUrl: invoiceFileUrl || null,
           receivedAt,
         },
       });
@@ -1959,6 +1961,7 @@ export async function receiveMaterialsFromInvoice(formData: FormData) {
             vendor: row.vendorName || null,
             notes: row.notes,
             photoUrl: null,
+            invoiceFileUrl: null,
             receivedAt,
           },
         });
