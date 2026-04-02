@@ -64,6 +64,7 @@ model ReceivingRecord {
   vendor          String?
   notes           String?
   photoUrl        String?
+  invoiceFileUrl  String?
   receivedAt      DateTime
   createdAt       DateTime        @default(now())
 

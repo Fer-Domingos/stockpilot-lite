@@ -1,10 +1,104 @@
 'use client';
 
+import { useMemo, useState } from 'react';
+
 import { JobRecord, MaterialRecord, receiveMaterial } from '@/app/actions';
 
+type UploadResponse = {
+  fileName: string;
+  url: string;
+};
+
+const maxSizeMb = 10;
+const acceptedTypes = ['application/pdf', 'image/jpeg', 'image/png'];
+
 export function ReceiveMaterialForm({ materials, jobs }: { materials: MaterialRecord[]; jobs: JobRecord[] }) {
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadedInvoice, setUploadedInvoice] = useState<UploadResponse | null>(null);
+
+  const acceptValue = useMemo(() => '.pdf,.jpg,.jpeg,.png', []);
+
+  async function handleInvoiceUpload() {
+    if (!selectedFile) {
+      setUploadError('Select a PDF or image file to upload.');
+      return;
+    }
+
+    if (!acceptedTypes.includes(selectedFile.type)) {
+      setUploadError('Only PDF, JPG, JPEG, and PNG files are allowed.');
+      return;
+    }
+
+    if (selectedFile.size > maxSizeMb * 1024 * 1024) {
+      setUploadError('Invoice file must be 10MB or smaller.');
+      return;
+    }
+
+    setUploadError(null);
+    setIsUploading(true);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+
+      const response = await fetch('/api/invoices/upload', {
+        method: 'POST',
+        body: formData
+      });
+
+      const payload = (await response.json()) as UploadResponse & { error?: string };
+
+      if (!response.ok || !payload.url || !payload.fileName) {
+        throw new Error(payload.error || 'Upload failed.');
+      }
+
+      setUploadedInvoice({ fileName: payload.fileName, url: payload.url });
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : 'Upload failed.');
+    } finally {
+      setIsUploading(false);
+    }
+  }
+
   return (
     <form action={receiveMaterial}>
+      <div style={{ border: '1px solid #eaecf0', borderRadius: '0.75rem', padding: '0.75rem', marginBottom: '1rem' }}>
+        <h4 style={{ marginTop: 0, marginBottom: '0.5rem' }}>Upload Invoice File</h4>
+        <p className="muted" style={{ marginTop: 0 }}>
+          Upload a PDF or image invoice and attach it to this receipt.
+        </p>
+
+        <label htmlFor="invoiceFile">Invoice File</label>
+        <input
+          id="invoiceFile"
+          name="invoiceFile"
+          type="file"
+          accept={acceptValue}
+          onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)}
+        />
+
+        <button type="button" onClick={handleInvoiceUpload} disabled={isUploading} style={{ marginTop: '0.5rem' }}>
+          {isUploading ? 'Uploading...' : 'Upload Invoice'}
+        </button>
+
+        {uploadError ? <p style={{ color: '#b42318', marginTop: '0.5rem' }}>{uploadError}</p> : null}
+
+        {uploadedInvoice ? (
+          <div style={{ marginTop: '0.5rem' }}>
+            <p style={{ marginBottom: '0.25rem' }}>
+              <strong>Uploaded:</strong> {uploadedInvoice.fileName}
+            </p>
+            <a href={uploadedInvoice.url} target="_blank" rel="noreferrer">
+              Open uploaded invoice
+            </a>
+          </div>
+        ) : null}
+      </div>
+
+      <input type="hidden" name="invoiceFileUrl" value={uploadedInvoice?.url ?? ''} readOnly />
+
       <label htmlFor="materialId">Material</label>
       <select id="materialId" name="materialId" required>
         <option value="">Select material</option>
