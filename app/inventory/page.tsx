@@ -14,7 +14,7 @@ export default async function InventoryPage({
   const { data: inventoryBalances } = await listInventoryBalances();
   const lowStockOnly = searchParams.lowStock === 'true';
   const rows = lowStockOnly
-    ? inventoryBalances.filter((row) => row.totalQuantity < row.minStock)
+    ? inventoryBalances.filter((row) => row.minStock !== null && row.totalQuantity < row.minStock)
     : inventoryBalances;
 
   return (

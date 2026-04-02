@@ -46,7 +46,7 @@ export function InventoryOverviewTable({
             ) : (
               rows.map((row) => {
                 const totalJobQuantity = row.jobQuantities.reduce((sum, entry) => sum + entry.quantity, 0);
-                const shortage = Math.max(row.minStock - row.totalQuantity, 0);
+                const shortage = row.minStock === null ? 0 : Math.max(row.minStock - row.totalQuantity, 0);
 
                 return (
                   <tr key={row.materialId}>
@@ -83,7 +83,7 @@ export function InventoryOverviewTable({
                     <td>{row.shopQuantity}</td>
                     <td>{totalJobQuantity}</td>
                     <td>{row.totalQuantity}</td>
-                    <td>{row.minStock}</td>
+                    <td>{row.minStock ?? '—'}</td>
                     <td>{shortage > 0 ? shortage : '—'}</td>
                   </tr>
                 );

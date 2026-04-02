@@ -6,13 +6,19 @@ import { MaterialRecord, createMaterial, deleteMaterial, updateMaterial } from '
 import { AppRole } from '@/lib/demo-data';
 import { canManageInventory } from '@/lib/permissions';
 
-type MaterialFormState = Omit<MaterialRecord, 'id' | 'quantity'>;
+type MaterialFormState = {
+  name: string;
+  sku: string;
+  unit: string;
+  minStockInput: string;
+  notes: string;
+};
 
 const emptyForm: MaterialFormState = {
   name: '',
   sku: '',
   unit: 'UNIT',
-  minStock: 0,
+  minStockInput: '',
   notes: ''
 };
 
@@ -46,12 +52,15 @@ export function MaterialsManager({
     setError('');
   }
 
-  function normalizeFormData(payload: MaterialFormState): MaterialFormState {
+  function normalizeFormData(payload: MaterialFormState) {
     return {
       name: payload.name.trim(),
       sku: payload.sku.trim(),
       unit: payload.unit.trim().toUpperCase(),
-      minStock: Math.max(0, Math.floor(payload.minStock)),
+      minStock:
+        payload.minStockInput.trim() === ''
+          ? null
+          : Math.max(0, Math.floor(Number(payload.minStockInput))),
       notes: payload.notes.trim()
     };
   }
@@ -149,15 +158,15 @@ export function MaterialsManager({
               id="minimumStock"
               type="number"
               min="0"
-              value={form.minStock}
+              value={form.minStockInput}
               onChange={(event) =>
                 setForm((current) => ({
                   ...current,
-                  minStock: Number(event.target.value)
+                  minStockInput: event.target.value
                 }))
               }
-              required
             />
+            <p className="muted">Optional. Leave blank if this material should not use low stock alerts.</p>
 
             <label htmlFor="notes">Notes</label>
             <textarea
@@ -203,7 +212,7 @@ export function MaterialsManager({
                   <td>{material.name}</td>
                   <td>{material.sku}</td>
                   <td>{material.unit}</td>
-                  <td>{material.minStock}</td>
+                  <td>{material.minStock ?? '—'}</td>
                   <td>{material.notes || '—'}</td>
                   {!isReadOnly ? (
                     <td>
@@ -217,7 +226,7 @@ export function MaterialsManager({
                               name: material.name,
                               sku: material.sku,
                               unit: unitOptions.includes(material.unit as (typeof unitOptions)[number]) ? material.unit : 'UNIT',
-                              minStock: material.minStock,
+                              minStockInput: material.minStock === null ? '' : String(material.minStock),
                               notes: material.notes
                             });
                           }}
