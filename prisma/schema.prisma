@@ -13,7 +13,7 @@ model Material {
   name      String
   unit      String
   quantity  Int      @default(0)
-  minStock  Int      @default(0)
+  minStock  Int?
   notes     String   @default("")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

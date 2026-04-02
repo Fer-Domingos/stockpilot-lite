@@ -25,7 +25,7 @@ export type MaterialRecord = {
   sku: string;
   unit: string;
   quantity: number;
-  minStock: number;
+  minStock: number | null;
   notes: string;
 };
 
@@ -93,7 +93,7 @@ export type InventoryBalanceView = {
   materialSku: string;
   materialName: string;
   unit: string;
-  minStock: number;
+  minStock: number | null;
   totalQuantity: number;
   shopQuantity: number;
   jobQuantities: Array<{ jobId: string; jobLabel: string; quantity: number }>;
@@ -418,7 +418,8 @@ function normalizeMaterialPayload(payload: MaterialPayload): MaterialPayload {
     name: payload.name.trim(),
     sku: payload.sku.trim(),
     unit: normalizeMaterialUnit(payload.unit),
-    minStock: Math.max(0, Math.floor(payload.minStock)),
+    minStock:
+      payload.minStock === null ? null : Math.max(0, Math.floor(payload.minStock)),
     notes: payload.notes.trim(),
   };
 }
@@ -446,7 +447,10 @@ function validateMaterialPayload(
     return { ok: false, error: "Unit must be either UNIT or SHEETS." };
   }
 
-  if (!Number.isFinite(payload.minStock) || payload.minStock < 0) {
+  if (
+    payload.minStock !== null &&
+    (!Number.isFinite(payload.minStock) || payload.minStock < 0)
+  ) {
     return { ok: false, error: "Minimum stock must be a non-negative number." };
   }
 
@@ -2391,10 +2395,13 @@ export async function getDashboardData(
       balanceSums.map((entry) => [entry.materialId, entry._sum.quantity ?? 0]),
     );
 
-    const lowStock = materials.filter(
-      (material) =>
-        (quantityByMaterialId.get(material.id) ?? 0) < material.minStock,
-    ).length;
+    const lowStock = materials.filter((material) => {
+      if (material.minStock === null) {
+        return false;
+      }
+
+      return (quantityByMaterialId.get(material.id) ?? 0) < material.minStock;
+    }).length;
 
     const inventoryRows: InventoryAtGlanceRow[] = balances.map((balance) => ({
       id: balance.id,
