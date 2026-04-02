@@ -424,6 +424,36 @@ function normalizeMaterialPayload(payload: MaterialPayload): MaterialPayload {
   };
 }
 
+function normalizeMaterialNameForComparison(value: string): string {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+async function findExistingMaterialByName(name: string) {
+  const normalizedTarget = normalizeMaterialNameForComparison(name);
+
+  if (!normalizedTarget) {
+    return null;
+  }
+
+  const materials = await prisma.material.findMany({
+    select: {
+      id: true,
+      name: true,
+      sku: true,
+      unit: true,
+      quantity: true,
+      minStock: true,
+      notes: true,
+    },
+  });
+
+  return (
+    materials.find(
+      (material) => normalizeMaterialNameForComparison(material.name) === normalizedTarget,
+    ) ?? null
+  );
+}
+
 function validateMaterialPayload(
   payload: MaterialPayload,
 ): ActionResult<MaterialRecord> {
@@ -784,6 +814,111 @@ export async function createMaterial(
     };
   } catch (error) {
     console.error("Failed to create material:", error);
+    return { ok: false, error: formatMaterialMutationError(error) };
+  }
+}
+
+type InvoiceMaterialPayload = {
+  name: string;
+  sku?: string;
+  unit: string;
+  minStock?: number | null;
+  notes?: string;
+};
+
+function buildInvoiceImportSku(name: string): string {
+  const slug = name
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 12) || "INV";
+  const suffix = Math.random().toString(36).slice(2, 8).toUpperCase();
+  return `${slug}-${suffix}`;
+}
+
+export async function createMaterialFromInvoiceImport(
+  payload: InvoiceMaterialPayload,
+): Promise<ActionResult<MaterialRecord>> {
+  try {
+    await requireRole("ADMIN");
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Unauthorized.",
+    };
+  }
+
+  const normalizedName = String(payload.name ?? "").trim();
+  const providedSku = String(payload.sku ?? "").trim();
+  const normalizedUnit = String(payload.unit ?? "UNIT").trim().toUpperCase();
+  const normalizedNotes = String(payload.notes ?? "").trim();
+  const minStock =
+    payload.minStock === null || payload.minStock === undefined
+      ? null
+      : Math.max(0, Math.floor(Number(payload.minStock)));
+
+  const validation = validateMaterialPayload({
+    name: normalizedName,
+    sku: providedSku || "TEMP-SKU",
+    unit: normalizedUnit,
+    minStock,
+    notes: normalizedNotes,
+  });
+
+  if (!validation.ok) {
+    if (validation.error === "SKU is required." && !providedSku) {
+      // SKU is optional for invoice import; generated server-side when omitted.
+    } else {
+      return validation;
+    }
+  }
+
+  const existingByName = await findExistingMaterialByName(normalizedName);
+  if (existingByName) {
+    return {
+      ok: false,
+      error: `A material named "${existingByName.name}" already exists. Select it instead of creating a duplicate.`,
+    };
+  }
+
+  try {
+    const created = await prisma.material.create({
+      data: {
+        name: normalizedName,
+        sku: providedSku || buildInvoiceImportSku(normalizedName),
+        unit: normalizeMaterialUnit(normalizedUnit),
+        minStock,
+        notes: normalizedNotes,
+      },
+      select: {
+        id: true,
+        name: true,
+        sku: true,
+        unit: true,
+        quantity: true,
+        minStock: true,
+        notes: true,
+      },
+    });
+
+    revalidatePath("/materials");
+    revalidatePath("/receive-materials");
+
+    return {
+      ok: true,
+      data: {
+        id: created.id,
+        name: created.name,
+        sku: created.sku,
+        unit: created.unit,
+        quantity: created.quantity,
+        minStock: created.minStock,
+        notes: created.notes,
+      },
+    };
+  } catch (error) {
+    console.error("Failed to create material from invoice import:", error);
     return { ok: false, error: formatMaterialMutationError(error) };
   }
 }

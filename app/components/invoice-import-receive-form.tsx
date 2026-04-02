@@ -1,8 +1,13 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState, useTransition } from 'react';
 
-import { JobRecord, MaterialRecord, receiveMaterialsFromInvoice } from '@/app/actions';
+import {
+  JobRecord,
+  MaterialRecord,
+  createMaterialFromInvoiceImport,
+  receiveMaterialsFromInvoice
+} from '@/app/actions';
 
 type DestinationType = 'SHOP' | 'JOB';
 
@@ -17,6 +22,14 @@ type ParsedRow = {
   invoiceNumber: string;
   vendorName: string;
   confirmed: boolean;
+};
+
+type CreateMaterialDraft = {
+  name: string;
+  sku: string;
+  unit: string;
+  minStockInput: string;
+  notes: string;
 };
 
 const quantityPattern = /(?:^|\s)(\d+(?:\.\d+)?)(?:\s|$)/;
@@ -50,6 +63,21 @@ function parseUnit(line: string, fallback: string) {
     return 'UNIT';
   }
   return fallback;
+}
+
+function buildSuggestedMaterialName(line: string) {
+  const withoutQty = line.replace(quantityPattern, ' ');
+  const withoutDecorators = withoutQty
+    .replace(/\b(?:ea|each|unit|units|sheet|sheets|pcs|pc|x)\b/gi, ' ')
+    .replace(/[()\[\],]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!withoutDecorators) {
+    return line.trim();
+  }
+
+  return withoutDecorators;
 }
 
 function matchMaterial(line: string, materials: MaterialRecord[]) {
@@ -108,7 +136,7 @@ function parseInvoiceText(rawText: string, materials: MaterialRecord[]) {
       jobId: '',
       invoiceNumber: '',
       vendorName: '',
-      confirmed: Boolean(matchedMaterial && quantity),
+      confirmed: Boolean(matchedMaterial && quantity)
     };
   });
 }
@@ -116,19 +144,36 @@ function parseInvoiceText(rawText: string, materials: MaterialRecord[]) {
 export function InvoiceImportReceiveForm({ materials, jobs }: { materials: MaterialRecord[]; jobs: JobRecord[] }) {
   const [invoiceText, setInvoiceText] = useState('');
   const [rows, setRows] = useState<ParsedRow[]>([]);
+  const [availableMaterials, setAvailableMaterials] = useState<MaterialRecord[]>(materials);
+  const [activeCreateRowId, setActiveCreateRowId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<CreateMaterialDraft | null>(null);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [isCreatingMaterial, startCreateTransition] = useTransition();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const openJobs = useMemo(() => jobs.filter((job) => job.status === 'OPEN'), [jobs]);
 
   function handleParse() {
-    const parsedRows = parseInvoiceText(invoiceText, materials);
+    const parsedRows = parseInvoiceText(invoiceText, availableMaterials);
     setRows(parsedRows);
     setError(null);
   }
 
   function updateRow(id: string, updater: (row: ParsedRow) => ParsedRow) {
     setRows((currentRows) => currentRows.map((row) => (row.id === id ? updater(row) : row)));
+  }
+
+  function openCreateMaterial(row: ParsedRow) {
+    setActiveCreateRowId(row.id);
+    setCreateError(null);
+    setDraft({
+      name: buildSuggestedMaterialName(row.originalLine),
+      sku: '',
+      unit: row.unit,
+      minStockInput: '',
+      notes: `Created from invoice line: ${row.originalLine}`
+    });
   }
 
   const confirmedRows = rows.filter((row) => row.confirmed);
@@ -145,7 +190,7 @@ export function InvoiceImportReceiveForm({ materials, jobs }: { materials: Mater
           destinationType: row.destinationType,
           jobId: row.destinationType === 'JOB' ? row.jobId : '',
           invoiceNumber: row.invoiceNumber,
-          vendorName: row.vendorName,
+          vendorName: row.vendorName
         }));
 
         if (payload.length === 0) {
@@ -204,93 +249,249 @@ export function InvoiceImportReceiveForm({ materials, jobs }: { materials: Mater
           </thead>
           <tbody>
             {rows.map((row) => (
-              <tr key={row.id}>
-                <td>
-                  <input
-                    type="checkbox"
-                    checked={row.confirmed}
-                    onChange={(event) => updateRow(row.id, (current) => ({ ...current, confirmed: event.target.checked }))}
-                  />
-                </td>
-                <td>{row.originalLine}</td>
-                <td>
-                  {row.materialId ? (
-                    <select
-                      value={row.materialId}
+              <Fragment key={row.id}>
+                <tr key={row.id}>
+                  <td>
+                    <input
+                      type="checkbox"
+                      disabled={!row.materialId}
+                      checked={row.confirmed}
+                      onChange={(event) =>
+                        updateRow(row.id, (current) => ({ ...current, confirmed: event.target.checked }))
+                      }
+                    />
+                  </td>
+                  <td>{row.originalLine}</td>
+                  <td>
+                    {row.materialId ? (
+                      <select
+                        value={row.materialId}
+                        onChange={(event) =>
+                          updateRow(row.id, (current) => ({
+                            ...current,
+                            materialId: event.target.value || null,
+                            unit:
+                              availableMaterials.find((material) => material.id === event.target.value)?.unit ??
+                              current.unit,
+                            confirmed: Boolean(event.target.value) && Boolean(current.quantity)
+                          }))
+                        }
+                      >
+                        {availableMaterials.map((material) => (
+                          <option key={material.id} value={material.id}>
+                            {material.name} ({material.sku})
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <div>
+                        <span style={{ color: '#b42318', marginRight: '0.5rem' }}>No match</span>
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          onClick={() => openCreateMaterial(row)}
+                          disabled={isCreatingMaterial}
+                        >
+                          Create Material
+                        </button>
+                        <p className="muted" style={{ marginBottom: 0 }}>
+                          Review and edit before creating.
+                        </p>
+                      </div>
+                    )}
+                  </td>
+                  <td>
+                    <input
+                      type="number"
+                      min="1"
+                      value={row.quantity}
                       onChange={(event) =>
                         updateRow(row.id, (current) => ({
                           ...current,
-                          materialId: event.target.value || null,
-                          unit: materials.find((material) => material.id === event.target.value)?.unit ?? current.unit,
+                          quantity: event.target.value,
+                          confirmed: Boolean(current.materialId) && Number(event.target.value) > 0
+                        }))
+                      }
+                      placeholder="Qty"
+                    />
+                  </td>
+                  <td>{row.unit}</td>
+                  <td>
+                    <select
+                      value={row.destinationType}
+                      onChange={(event) =>
+                        updateRow(row.id, (current) => ({
+                          ...current,
+                          destinationType: event.target.value as DestinationType,
+                          jobId: event.target.value === 'JOB' ? current.jobId : ''
                         }))
                       }
                     >
-                      {materials.map((material) => (
-                        <option key={material.id} value={material.id}>
-                          {material.name} ({material.sku})
+                      <option value="SHOP">SHOP</option>
+                      <option value="JOB">JOB</option>
+                    </select>
+                  </td>
+                  <td>
+                    <select
+                      value={row.jobId}
+                      disabled={row.destinationType !== 'JOB'}
+                      onChange={(event) => updateRow(row.id, (current) => ({ ...current, jobId: event.target.value }))}
+                    >
+                      <option value="">Select job</option>
+                      {openJobs.map((job) => (
+                        <option key={job.id} value={job.id}>
+                          {job.number} — {job.name}
                         </option>
                       ))}
                     </select>
-                  ) : (
-                    <span style={{ color: '#b42318' }}>No match</span>
-                  )}
-                </td>
-                <td>
-                  <input
-                    type="number"
-                    min="1"
-                    value={row.quantity}
-                    onChange={(event) => updateRow(row.id, (current) => ({ ...current, quantity: event.target.value }))}
-                    placeholder="Qty"
-                  />
-                </td>
-                <td>{row.unit}</td>
-                <td>
-                  <select
-                    value={row.destinationType}
-                    onChange={(event) =>
-                      updateRow(row.id, (current) => ({
-                        ...current,
-                        destinationType: event.target.value as DestinationType,
-                        jobId: event.target.value === 'JOB' ? current.jobId : '',
-                      }))
-                    }
-                  >
-                    <option value="SHOP">SHOP</option>
-                    <option value="JOB">JOB</option>
-                  </select>
-                </td>
-                <td>
-                  <select
-                    value={row.jobId}
-                    disabled={row.destinationType !== 'JOB'}
-                    onChange={(event) => updateRow(row.id, (current) => ({ ...current, jobId: event.target.value }))}
-                  >
-                    <option value="">Select job</option>
-                    {openJobs.map((job) => (
-                      <option key={job.id} value={job.id}>
-                        {job.number} — {job.name}
-                      </option>
-                    ))}
-                  </select>
-                </td>
-                <td>
-                  <input
-                    value={row.invoiceNumber}
-                    onChange={(event) =>
-                      updateRow(row.id, (current) => ({ ...current, invoiceNumber: event.target.value }))
-                    }
-                    placeholder="Invoice/reference"
-                  />
-                </td>
-                <td>
-                  <input
-                    value={row.vendorName}
-                    onChange={(event) => updateRow(row.id, (current) => ({ ...current, vendorName: event.target.value }))}
-                    placeholder="Vendor"
-                  />
-                </td>
-              </tr>
+                  </td>
+                  <td>
+                    <input
+                      value={row.invoiceNumber}
+                      onChange={(event) =>
+                        updateRow(row.id, (current) => ({ ...current, invoiceNumber: event.target.value }))
+                      }
+                      placeholder="Invoice/reference"
+                    />
+                  </td>
+                  <td>
+                    <input
+                      value={row.vendorName}
+                      onChange={(event) => updateRow(row.id, (current) => ({ ...current, vendorName: event.target.value }))}
+                      placeholder="Vendor"
+                    />
+                  </td>
+                </tr>
+                {activeCreateRowId === row.id && draft ? (
+                  <tr>
+                    <td colSpan={9}>
+                      <div style={{ border: '1px solid #d0d5dd', borderRadius: '6px', padding: '0.75rem' }}>
+                        <p style={{ marginTop: 0, marginBottom: '0.5rem' }}>
+                          Create new material for this line (review before saving).
+                        </p>
+                        {createError ? <p style={{ color: '#b42318' }}>{createError}</p> : null}
+                        <div
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(2, minmax(220px, 1fr))',
+                            gap: '0.5rem',
+                            alignItems: 'end'
+                          }}
+                        >
+                          <div>
+                            <label htmlFor={`${row.id}-name`}>Material Name</label>
+                            <input
+                              id={`${row.id}-name`}
+                              value={draft.name}
+                              onChange={(event) => setDraft((current) => (current ? { ...current, name: event.target.value } : null))}
+                              placeholder="Material name"
+                            />
+                          </div>
+                          <div>
+                            <label htmlFor={`${row.id}-sku`}>SKU (optional)</label>
+                            <input
+                              id={`${row.id}-sku`}
+                              value={draft.sku}
+                              onChange={(event) => setDraft((current) => (current ? { ...current, sku: event.target.value } : null))}
+                              placeholder="Optional SKU"
+                            />
+                          </div>
+                          <div>
+                            <label htmlFor={`${row.id}-unit`}>Unit</label>
+                            <select
+                              id={`${row.id}-unit`}
+                              value={draft.unit}
+                              onChange={(event) => setDraft((current) => (current ? { ...current, unit: event.target.value } : null))}
+                            >
+                              <option value="UNIT">UNIT</option>
+                              <option value="SHEETS">SHEETS</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label htmlFor={`${row.id}-minstock`}>Minimum Stock (optional)</label>
+                            <input
+                              id={`${row.id}-minstock`}
+                              type="number"
+                              min="0"
+                              value={draft.minStockInput}
+                              onChange={(event) =>
+                                setDraft((current) => (current ? { ...current, minStockInput: event.target.value } : null))
+                              }
+                              placeholder="Optional"
+                            />
+                          </div>
+                          <div style={{ gridColumn: '1 / -1' }}>
+                            <label htmlFor={`${row.id}-notes`}>Notes (optional)</label>
+                            <input
+                              id={`${row.id}-notes`}
+                              value={draft.notes}
+                              onChange={(event) => setDraft((current) => (current ? { ...current, notes: event.target.value } : null))}
+                              placeholder="Optional notes"
+                            />
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
+                          <button
+                            type="button"
+                            disabled={isCreatingMaterial}
+                            onClick={() => {
+                              const currentDraft = draft;
+                              if (!currentDraft) {
+                                return;
+                              }
+
+                              setCreateError(null);
+
+                              startCreateTransition(async () => {
+                                const result = await createMaterialFromInvoiceImport({
+                                  name: currentDraft.name,
+                                  sku: currentDraft.sku,
+                                  unit: currentDraft.unit,
+                                  minStock:
+                                    currentDraft.minStockInput.trim() === ''
+                                      ? null
+                                      : Number(currentDraft.minStockInput),
+                                  notes: currentDraft.notes
+                                });
+
+                                if (!result.ok || !result.data) {
+                                  setCreateError(result.error ?? 'Failed to create material.');
+                                  return;
+                                }
+
+                                const createdMaterial = result.data;
+                                setAvailableMaterials((current) => [...current, createdMaterial]);
+                                updateRow(row.id, (current) => ({
+                                  ...current,
+                                  materialId: createdMaterial.id,
+                                  unit: createdMaterial.unit,
+                                  confirmed: Boolean(current.quantity)
+                                }));
+                                setActiveCreateRowId(null);
+                                setDraft(null);
+                              });
+                            }}
+                          >
+                            {isCreatingMaterial ? 'Creating...' : 'Save Material'}
+                          </button>
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            disabled={isCreatingMaterial}
+                            onClick={() => {
+                              setActiveCreateRowId(null);
+                              setDraft(null);
+                              setCreateError(null);
+                            }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                ) : null}
+              </Fragment>
             ))}
           </tbody>
         </table>
