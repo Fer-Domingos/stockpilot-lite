@@ -1,6 +1,6 @@
-import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
+import { put } from '@vercel/blob';
 import { NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
@@ -40,17 +40,16 @@ export async function POST(request: Request) {
     const timestamp = Date.now();
     const safeBaseName = sanitizeFileName(path.basename(originalName, extension)) || 'invoice';
     const finalFileName = `${timestamp}-${safeBaseName}${extension}`;
+    const blobPath = `invoices/${finalFileName}`;
 
-    const uploadDir = path.join(process.cwd(), 'public', 'uploads', 'invoices');
-    await mkdir(uploadDir, { recursive: true });
-
-    const filePath = path.join(uploadDir, finalFileName);
-    const bytes = await uploadedFile.arrayBuffer();
-    await writeFile(filePath, Buffer.from(bytes));
+    const blob = await put(blobPath, uploadedFile, {
+      access: 'public',
+      addRandomSuffix: false
+    });
 
     return NextResponse.json({
       fileName: finalFileName,
-      url: `/uploads/invoices/${finalFileName}`
+      url: blob.url
     });
   } catch (error) {
     console.error('Failed to upload invoice file:', error);
