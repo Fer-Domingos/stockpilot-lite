@@ -15,6 +15,7 @@ const acceptedTypes = ['application/pdf', 'image/jpeg', 'image/png'];
 export function ReceiveMaterialForm({ materials, jobs }: { materials: MaterialRecord[]; jobs: JobRecord[] }) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [isExtracting, setIsExtracting] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadedInvoice, setUploadedInvoice] = useState<UploadResponse | null>(null);
 
@@ -55,6 +56,35 @@ export function ReceiveMaterialForm({ materials, jobs }: { materials: MaterialRe
       }
 
       setUploadedInvoice({ fileName: payload.fileName, url: payload.url });
+
+      if (selectedFile.type === 'application/pdf') {
+        setIsExtracting(true);
+        try {
+          const extractResponse = await fetch('/api/invoices/extract-text', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: payload.url })
+          });
+          const extractPayload = (await extractResponse.json()) as { text?: string; error?: string };
+          if (!extractResponse.ok) {
+            throw new Error(extractPayload.error || 'Unable to extract invoice text.');
+          }
+
+          if (extractPayload.text?.trim()) {
+            window.dispatchEvent(
+              new CustomEvent('invoice-text-extracted', {
+                detail: { text: extractPayload.text, url: payload.url }
+              })
+            );
+          } else {
+            setUploadError('Invoice uploaded, but no readable text was found in the PDF.');
+          }
+        } catch (error) {
+          setUploadError(error instanceof Error ? error.message : 'Unable to extract invoice text.');
+        } finally {
+          setIsExtracting(false);
+        }
+      }
     } catch (error) {
       setUploadError(error instanceof Error ? error.message : 'Upload failed.');
     } finally {
@@ -79,8 +109,13 @@ export function ReceiveMaterialForm({ materials, jobs }: { materials: MaterialRe
           onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)}
         />
 
-        <button type="button" onClick={handleInvoiceUpload} disabled={isUploading} style={{ marginTop: '0.5rem' }}>
-          {isUploading ? 'Uploading...' : 'Upload Invoice'}
+        <button
+          type="button"
+          onClick={handleInvoiceUpload}
+          disabled={isUploading || isExtracting}
+          style={{ marginTop: '0.5rem' }}
+        >
+          {isUploading ? 'Uploading...' : isExtracting ? 'Extracting text...' : 'Upload Invoice'}
         </button>
 
         {uploadError ? <p style={{ color: '#b42318', marginTop: '0.5rem' }}>{uploadError}</p> : null}
