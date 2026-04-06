@@ -9,6 +9,14 @@ type UploadResponse = {
   url: string;
 };
 
+type ExtractResponse = {
+  extractedText?: string;
+  invoiceText?: string;
+  text?: string;
+  content?: string;
+  error?: string;
+};
+
 const maxSizeMb = 10;
 const acceptedTypes = ['application/pdf', 'image/jpeg', 'image/png'];
 
@@ -17,6 +25,9 @@ export function ReceiveMaterialForm({ materials, jobs }: { materials: MaterialRe
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadedInvoice, setUploadedInvoice] = useState<UploadResponse | null>(null);
+  const [isProcessingInvoice, setIsProcessingInvoice] = useState(false);
+  const [processingMessage, setProcessingMessage] = useState<string | null>(null);
+  const [processingError, setProcessingError] = useState<string | null>(null);
 
   const acceptValue = useMemo(() => '.pdf,.jpg,.jpeg,.png', []);
 
@@ -37,7 +48,10 @@ export function ReceiveMaterialForm({ materials, jobs }: { materials: MaterialRe
     }
 
     setUploadError(null);
+    setProcessingError(null);
+    setProcessingMessage(null);
     setIsUploading(true);
+    let uploadedFile: UploadResponse | null = null;
 
     try {
       const formData = new FormData();
@@ -54,11 +68,53 @@ export function ReceiveMaterialForm({ materials, jobs }: { materials: MaterialRe
         throw new Error(payload.error || 'Upload failed.');
       }
 
-      setUploadedInvoice({ fileName: payload.fileName, url: payload.url });
+      uploadedFile = { fileName: payload.fileName, url: payload.url };
+      setUploadedInvoice(uploadedFile);
     } catch (error) {
       setUploadError(error instanceof Error ? error.message : 'Upload failed.');
     } finally {
       setIsUploading(false);
+    }
+
+    if (!uploadedFile) {
+      return;
+    }
+
+    setIsProcessingInvoice(true);
+    setProcessingMessage('Processing invoice...');
+
+    try {
+      const extractResponse = await fetch('/api/invoices/extract', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          fileUrl: uploadedFile.url
+        })
+      });
+      const extractPayload = (await extractResponse.json()) as ExtractResponse;
+      const extractedText =
+        extractPayload.extractedText ?? extractPayload.invoiceText ?? extractPayload.text ?? extractPayload.content ?? '';
+
+      if (!extractResponse.ok || !extractedText.trim()) {
+        throw new Error(extractPayload.error || 'Invoice extraction failed.');
+      }
+
+      window.dispatchEvent(
+        new CustomEvent('invoice-extracted', {
+          detail: {
+            text: extractedText
+          }
+        })
+      );
+
+      setProcessingMessage('Invoice processed successfully');
+    } catch (error) {
+      setProcessingError(error instanceof Error ? error.message : 'Invoice extraction failed.');
+      setProcessingMessage(null);
+    } finally {
+      setIsProcessingInvoice(false);
     }
   }
 
@@ -79,11 +135,21 @@ export function ReceiveMaterialForm({ materials, jobs }: { materials: MaterialRe
           onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)}
         />
 
-        <button type="button" onClick={handleInvoiceUpload} disabled={isUploading} style={{ marginTop: '0.5rem' }}>
+        <button
+          type="button"
+          onClick={handleInvoiceUpload}
+          disabled={isUploading || isProcessingInvoice}
+          style={{ marginTop: '0.5rem' }}
+        >
           {isUploading ? 'Uploading...' : 'Upload Invoice'}
         </button>
 
         {uploadError ? <p style={{ color: '#b42318', marginTop: '0.5rem' }}>{uploadError}</p> : null}
+        {isProcessingInvoice ? <p style={{ color: '#475467', marginTop: '0.5rem' }}>Processing invoice...</p> : null}
+        {!isProcessingInvoice && processingMessage ? (
+          <p style={{ color: '#027a48', marginTop: '0.5rem' }}>{processingMessage}</p>
+        ) : null}
+        {processingError ? <p style={{ color: '#b42318', marginTop: '0.5rem' }}>{processingError}</p> : null}
 
         {uploadedInvoice ? (
           <div style={{ marginTop: '0.5rem' }}>

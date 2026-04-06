@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useMemo, useState, useTransition } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState, useTransition } from 'react';
 
 import {
   JobRecord,
@@ -31,6 +31,10 @@ type CreateMaterialDraft = {
   minStockInput: string;
   notes: string;
 };
+
+type InvoiceExtractedEvent = CustomEvent<{
+  text: string;
+}>;
 
 const quantityPattern = /(?:^|\s)(\d+(?:\.\d+)?)(?:\s|$)/;
 
@@ -154,11 +158,33 @@ export function InvoiceImportReceiveForm({ materials, jobs }: { materials: Mater
 
   const openJobs = useMemo(() => jobs.filter((job) => job.status === 'OPEN'), [jobs]);
 
-  function handleParse() {
-    const parsedRows = parseInvoiceText(invoiceText, availableMaterials);
-    setRows(parsedRows);
-    setError(null);
-  }
+  const handleParse = useCallback(
+    (nextText?: string) => {
+      const sourceText = nextText ?? invoiceText;
+      const parsedRows = parseInvoiceText(sourceText, availableMaterials);
+      setRows(parsedRows);
+      setError(null);
+    },
+    [availableMaterials, invoiceText]
+  );
+
+  useEffect(() => {
+    function handleInvoiceExtracted(event: Event) {
+      const extractedEvent = event as InvoiceExtractedEvent;
+      const extractedText = extractedEvent.detail?.text ?? '';
+      if (!extractedText.trim()) {
+        return;
+      }
+
+      setInvoiceText(extractedText);
+      handleParse(extractedText);
+    }
+
+    window.addEventListener('invoice-extracted', handleInvoiceExtracted);
+    return () => {
+      window.removeEventListener('invoice-extracted', handleInvoiceExtracted);
+    };
+  }, [handleParse]);
 
   function updateRow(id: string, updater: (row: ParsedRow) => ParsedRow) {
     setRows((currentRows) => currentRows.map((row) => (row.id === id ? updater(row) : row)));
