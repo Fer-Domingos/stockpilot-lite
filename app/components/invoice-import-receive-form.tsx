@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useMemo, useState, useTransition } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState, useTransition } from 'react';
 
 import {
   JobRecord,
@@ -30,6 +30,11 @@ type CreateMaterialDraft = {
   unit: string;
   minStockInput: string;
   notes: string;
+};
+
+type UploadResponse = {
+  fileName: string;
+  url: string;
 };
 
 const quantityPattern = /(?:^|\s)(\d+(?:\.\d+)?)(?:\s|$)/;
@@ -144,6 +149,10 @@ function parseInvoiceText(rawText: string, materials: MaterialRecord[]) {
 export function InvoiceImportReceiveForm({ materials, jobs }: { materials: MaterialRecord[]; jobs: JobRecord[] }) {
   const [invoiceText, setInvoiceText] = useState('');
   const [rows, setRows] = useState<ParsedRow[]>([]);
+  const [uploadedInvoice, setUploadedInvoice] = useState<UploadResponse | null>(null);
+  const [isExtracting, setIsExtracting] = useState(false);
+  const [isParsing, setIsParsing] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [availableMaterials, setAvailableMaterials] = useState<MaterialRecord[]>(materials);
   const [activeCreateRowId, setActiveCreateRowId] = useState<string | null>(null);
   const [draft, setDraft] = useState<CreateMaterialDraft | null>(null);
@@ -154,11 +163,64 @@ export function InvoiceImportReceiveForm({ materials, jobs }: { materials: Mater
 
   const openJobs = useMemo(() => jobs.filter((job) => job.status === 'OPEN'), [jobs]);
 
-  function handleParse() {
-    const parsedRows = parseInvoiceText(invoiceText, availableMaterials);
+  const parseAndSetRows = useCallback((rawText: string) => {
+    const parsedRows = parseInvoiceText(rawText, availableMaterials);
     setRows(parsedRows);
     setError(null);
+  }, [availableMaterials]);
+
+  function handleParse() {
+    setIsParsing(true);
+    setStatusMessage('Parsing invoice...');
+    parseAndSetRows(invoiceText);
+    setStatusMessage('Invoice parsed. Review the mapped rows before posting.');
+    setIsParsing(false);
   }
+
+  const extractInvoiceTextFromUrl = useCallback(async (invoiceUrl: string) => {
+    setIsExtracting(true);
+    setStatusMessage('Extracting invoice text...');
+    setError(null);
+
+    try {
+      const response = await fetch('/api/invoices/extract', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: invoiceUrl })
+      });
+
+      const payload = (await response.json()) as { text?: string; error?: string };
+      if (!response.ok || !payload.text) {
+        throw new Error(payload.error || 'Failed to extract invoice text.');
+      }
+
+      setInvoiceText(payload.text);
+      setStatusMessage('Parsing invoice...');
+      setIsParsing(true);
+      parseAndSetRows(payload.text);
+      setStatusMessage('Invoice extracted and parsed. Review the mapped rows before posting.');
+    } catch (extractError) {
+      setStatusMessage(null);
+      setError(extractError instanceof Error ? extractError.message : 'Failed to extract invoice text.');
+    } finally {
+      setIsExtracting(false);
+      setIsParsing(false);
+    }
+  }, [parseAndSetRows]);
+
+  useEffect(() => {
+    function onInvoiceUploaded(event: Event) {
+      const customEvent = event as CustomEvent<UploadResponse>;
+      if (!customEvent.detail?.url) {
+        return;
+      }
+      setUploadedInvoice(customEvent.detail);
+      void extractInvoiceTextFromUrl(customEvent.detail.url);
+    }
+
+    window.addEventListener('invoice-uploaded', onInvoiceUploaded as EventListener);
+    return () => window.removeEventListener('invoice-uploaded', onInvoiceUploaded as EventListener);
+  }, [extractInvoiceTextFromUrl]);
 
   function updateRow(id: string, updater: (row: ParsedRow) => ParsedRow) {
     setRows((currentRows) => currentRows.map((row) => (row.id === id ? updater(row) : row)));
@@ -211,6 +273,14 @@ export function InvoiceImportReceiveForm({ materials, jobs }: { materials: Mater
       }}
     >
       <label htmlFor="invoiceText">Paste Invoice Text</label>
+      {uploadedInvoice ? (
+        <p className="muted" style={{ marginTop: 0 }}>
+          Uploaded invoice detected:{' '}
+          <a href={uploadedInvoice.url} target="_blank" rel="noreferrer">
+            {uploadedInvoice.fileName}
+          </a>
+        </p>
+      ) : null}
       <textarea
         id="invoiceText"
         rows={8}
@@ -220,6 +290,19 @@ export function InvoiceImportReceiveForm({ materials, jobs }: { materials: Mater
       />
 
       <div style={{ display: 'flex', gap: '0.5rem' }}>
+        <button
+          type="button"
+          onClick={() => {
+            if (!uploadedInvoice?.url || isExtracting || isParsing) {
+              return;
+            }
+            void extractInvoiceTextFromUrl(uploadedInvoice.url);
+          }}
+          disabled={!uploadedInvoice?.url || isExtracting || isParsing}
+          className="secondary-button"
+        >
+          {isExtracting ? 'Extracting invoice text...' : 'Extract Text from Invoice'}
+        </button>
         <button type="button" onClick={handleParse}>
           Parse Invoice
         </button>
@@ -230,6 +313,7 @@ export function InvoiceImportReceiveForm({ materials, jobs }: { materials: Mater
 
       <input type="hidden" name="rowsPayload" />
 
+      {statusMessage ? <p style={{ color: '#344054', marginBottom: '0.75rem' }}>{statusMessage}</p> : null}
       {error ? <p style={{ color: '#b42318', marginBottom: '0.75rem' }}>{error}</p> : null}
 
       {rows.length > 0 ? (
