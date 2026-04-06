@@ -32,7 +32,16 @@ type CreateMaterialDraft = {
   notes: string;
 };
 
+type ExtractInvoiceResponse = {
+  text?: string;
+  error?: string;
+  method?: 'pdf-embedded-text' | 'openai-vision-ocr';
+  usedOcr?: boolean;
+};
+
 const quantityPattern = /(?:^|\s)(\d+(?:\.\d+)?)(?:\s|$)/;
+const maxUploadSizeBytes = 10 * 1024 * 1024;
+const acceptedFileTypes = new Set(['application/pdf', 'image/jpeg', 'image/png']);
 
 function normalizeText(value: string) {
   return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
@@ -143,6 +152,7 @@ function parseInvoiceText(rawText: string, materials: MaterialRecord[]) {
 
 export function InvoiceImportReceiveForm({ materials, jobs }: { materials: MaterialRecord[]; jobs: JobRecord[] }) {
   const [invoiceText, setInvoiceText] = useState('');
+  const [invoiceFile, setInvoiceFile] = useState<File | null>(null);
   const [rows, setRows] = useState<ParsedRow[]>([]);
   const [availableMaterials, setAvailableMaterials] = useState<MaterialRecord[]>(materials);
   const [activeCreateRowId, setActiveCreateRowId] = useState<string | null>(null);
@@ -150,7 +160,10 @@ export function InvoiceImportReceiveForm({ materials, jobs }: { materials: Mater
   const [createError, setCreateError] = useState<string | null>(null);
   const [isCreatingMaterial, startCreateTransition] = useTransition();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isExtracting, setIsExtracting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [extractError, setExtractError] = useState<string | null>(null);
+  const [extractSuccess, setExtractSuccess] = useState<string | null>(null);
 
   const openJobs = useMemo(() => jobs.filter((job) => job.status === 'OPEN'), [jobs]);
 
@@ -158,6 +171,59 @@ export function InvoiceImportReceiveForm({ materials, jobs }: { materials: Mater
     const parsedRows = parseInvoiceText(invoiceText, availableMaterials);
     setRows(parsedRows);
     setError(null);
+  }
+
+  async function handleExtractText() {
+    if (!invoiceFile) {
+      setExtractError('Select a PDF, JPG, or PNG invoice file first.');
+      setExtractSuccess(null);
+      return;
+    }
+
+    if (!acceptedFileTypes.has(invoiceFile.type)) {
+      setExtractError('Only PDF, JPG, JPEG, and PNG files are allowed.');
+      setExtractSuccess(null);
+      return;
+    }
+
+    if (invoiceFile.size > maxUploadSizeBytes) {
+      setExtractError('Invoice file must be 10MB or smaller.');
+      setExtractSuccess(null);
+      return;
+    }
+
+    setIsExtracting(true);
+    setExtractError(null);
+    setExtractSuccess(null);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', invoiceFile);
+
+      const response = await fetch('/api/invoices/extract', {
+        method: 'POST',
+        body: formData
+      });
+
+      const payload = (await response.json()) as ExtractInvoiceResponse;
+
+      if (!response.ok || !payload.text) {
+        throw new Error(payload.error || 'Unable to extract invoice text.');
+      }
+
+      setInvoiceText(payload.text);
+      setRows([]);
+      setError(null);
+      setExtractSuccess(
+        payload.usedOcr
+          ? 'Text extracted successfully using OCR. Review the result before parsing.'
+          : 'Text extracted successfully from the PDF.'
+      );
+    } catch (extractionError) {
+      setExtractError(extractionError instanceof Error ? extractionError.message : 'Unable to extract invoice text.');
+    } finally {
+      setIsExtracting(false);
+    }
   }
 
   function updateRow(id: string, updater: (row: ParsedRow) => ParsedRow) {
@@ -210,7 +276,24 @@ export function InvoiceImportReceiveForm({ materials, jobs }: { materials: Mater
         setIsSubmitting(true);
       }}
     >
-      <label htmlFor="invoiceText">Paste Invoice Text</label>
+      <label htmlFor="invoiceFile">Invoice File (PDF/JPG/PNG)</label>
+      <input
+        id="invoiceFile"
+        type="file"
+        accept=".pdf,.jpg,.jpeg,.png"
+        onChange={(event) => setInvoiceFile(event.target.files?.[0] ?? null)}
+      />
+
+      <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', marginBottom: '0.5rem' }}>
+        <button type="button" onClick={handleExtractText} disabled={isExtracting}>
+          {isExtracting ? 'Extracting...' : 'Extract Text from Invoice'}
+        </button>
+      </div>
+
+      {extractError ? <p style={{ color: '#b42318', marginBottom: '0.75rem' }}>{extractError}</p> : null}
+      {extractSuccess ? <p style={{ color: '#027a48', marginBottom: '0.75rem' }}>{extractSuccess}</p> : null}
+
+      <label htmlFor="invoiceText">Import from Invoice Text</label>
       <textarea
         id="invoiceText"
         rows={8}
