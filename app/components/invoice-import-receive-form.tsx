@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useMemo, useState, useTransition } from 'react';
+import { Fragment, useEffect, useMemo, useState, useTransition } from 'react';
 
 import {
   JobRecord,
@@ -153,6 +153,21 @@ export function InvoiceImportReceiveForm({ materials, jobs }: { materials: Mater
   const [error, setError] = useState<string | null>(null);
 
   const openJobs = useMemo(() => jobs.filter((job) => job.status === 'OPEN'), [jobs]);
+
+  useEffect(() => {
+    function handleExtractedInvoiceText(event: Event) {
+      if (!(event instanceof CustomEvent) || typeof event.detail?.text !== 'string') {
+        return;
+      }
+
+      setInvoiceText(event.detail.text);
+      setError(null);
+    }
+
+    window.addEventListener('invoice-text-extracted', handleExtractedInvoiceText);
+
+    return () => window.removeEventListener('invoice-text-extracted', handleExtractedInvoiceText);
+  }, []);
 
   function handleParse() {
     const parsedRows = parseInvoiceText(invoiceText, availableMaterials);
