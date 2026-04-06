@@ -15,7 +15,9 @@ const acceptedTypes = ['application/pdf', 'image/jpeg', 'image/png'];
 export function ReceiveMaterialForm({ materials, jobs }: { materials: MaterialRecord[]; jobs: JobRecord[] }) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [isExtracting, setIsExtracting] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [extractError, setExtractError] = useState<string | null>(null);
   const [uploadedInvoice, setUploadedInvoice] = useState<UploadResponse | null>(null);
 
   const acceptValue = useMemo(() => '.pdf,.jpg,.jpeg,.png', []);
@@ -55,10 +57,90 @@ export function ReceiveMaterialForm({ materials, jobs }: { materials: MaterialRe
       }
 
       setUploadedInvoice({ fileName: payload.fileName, url: payload.url });
+      setExtractError(null);
     } catch (error) {
       setUploadError(error instanceof Error ? error.message : 'Upload failed.');
     } finally {
       setIsUploading(false);
+    }
+  }
+
+  function decodePdfEscapedText(value: string) {
+    return value
+      .replace(/\\([nrtbf()\\])/g, (_, escaped: string) => {
+        switch (escaped) {
+          case 'n':
+            return '\n';
+          case 'r':
+            return '\r';
+          case 't':
+            return '\t';
+          case 'b':
+            return '\b';
+          case 'f':
+            return '\f';
+          default:
+            return escaped;
+        }
+      })
+      .replace(/\\([0-7]{1,3})/g, (_, octal: string) => String.fromCharCode(parseInt(octal, 8)));
+  }
+
+  async function extractTextFromPdf(file: File) {
+    const data = new Uint8Array(await file.arrayBuffer());
+    const decoded = new TextDecoder('latin1').decode(data);
+    const extracted: string[] = [];
+    const textObjectBlocks = decoded.match(/BT[\s\S]*?ET/g) ?? [];
+
+    for (const block of textObjectBlocks) {
+      const operatorMatches = block.match(/\((?:\\.|[^\\()])*\)\s*(?:Tj|')|\[(?:[\s\S]*?)\]\s*TJ/g) ?? [];
+      for (const operation of operatorMatches) {
+        if (operation.endsWith('TJ')) {
+          const parts = operation.match(/\((?:\\.|[^\\()])*\)/g) ?? [];
+          for (const part of parts) {
+            extracted.push(decodePdfEscapedText(part.slice(1, -1)));
+          }
+        } else {
+          const directMatch = operation.match(/\(([\s\S]*?)\)/);
+          if (directMatch) {
+            extracted.push(decodePdfEscapedText(directMatch[1]));
+          }
+        }
+      }
+    }
+
+    return extracted.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  }
+
+  async function handleExtractInvoiceText() {
+    if (!selectedFile || !uploadedInvoice) {
+      setExtractError('Upload an invoice before extracting text.');
+      return;
+    }
+
+    setIsExtracting(true);
+    setExtractError(null);
+
+    try {
+      let extractedText = '';
+
+      if (selectedFile.type === 'application/pdf') {
+        extractedText = await extractTextFromPdf(selectedFile);
+      } else if (selectedFile.type === 'image/jpeg' || selectedFile.type === 'image/png') {
+        throw new Error('Image OCR is not available in this build yet. Please paste text manually for JPG/PNG.');
+      } else {
+        throw new Error('Only PDF, JPG, JPEG, and PNG files are supported for extraction.');
+      }
+
+      if (!extractedText) {
+        throw new Error('No readable text was found in the uploaded invoice.');
+      }
+
+      window.dispatchEvent(new CustomEvent('invoice-text-extracted', { detail: { text: extractedText } }));
+    } catch (error) {
+      setExtractError(error instanceof Error ? error.message : 'Failed to extract text from invoice.');
+    } finally {
+      setIsExtracting(false);
     }
   }
 
@@ -93,8 +175,20 @@ export function ReceiveMaterialForm({ materials, jobs }: { materials: MaterialRe
             <a href={uploadedInvoice.url} target="_blank" rel="noreferrer">
               Open uploaded invoice
             </a>
+            <div>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={handleExtractInvoiceText}
+                disabled={isExtracting}
+                style={{ marginTop: '0.5rem' }}
+              >
+                {isExtracting ? 'Extracting...' : 'Extract Text from Invoice'}
+              </button>
+            </div>
           </div>
         ) : null}
+        {extractError ? <p style={{ color: '#b42318', marginTop: '0.5rem' }}>{extractError}</p> : null}
       </div>
 
       <input type="hidden" name="invoiceFileUrl" value={uploadedInvoice?.url ?? ''} readOnly />
