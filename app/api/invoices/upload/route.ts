@@ -18,7 +18,14 @@ export async function POST(request: Request) {
     const formData = await request.formData();
     const uploadedFile = formData.get('file');
 
-    if (!(uploadedFile instanceof File)) {
+    const isFileLike =
+      uploadedFile !== null &&
+      typeof uploadedFile === 'object' &&
+      'size' in uploadedFile &&
+      'name' in uploadedFile &&
+      'type' in uploadedFile;
+
+    if (!isFileLike) {
       return NextResponse.json({ error: 'A file upload is required.' }, { status: 400 });
     }
 
