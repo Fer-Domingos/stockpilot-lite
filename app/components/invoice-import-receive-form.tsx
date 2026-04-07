@@ -143,6 +143,10 @@ function parseInvoiceText(rawText: string, materials: MaterialRecord[]) {
 
 export function InvoiceImportReceiveForm({ materials, jobs }: { materials: MaterialRecord[]; jobs: JobRecord[] }) {
   const [invoiceText, setInvoiceText] = useState('');
+  const [invoicePdf, setInvoicePdf] = useState<File | null>(null);
+  const [extractionMessage, setExtractionMessage] = useState<string | null>(null);
+  const [extractionError, setExtractionError] = useState<string | null>(null);
+  const [isExtracting, setIsExtracting] = useState(false);
   const [rows, setRows] = useState<ParsedRow[]>([]);
   const [availableMaterials, setAvailableMaterials] = useState<MaterialRecord[]>(materials);
   const [activeCreateRowId, setActiveCreateRowId] = useState<string | null>(null);
@@ -158,6 +162,43 @@ export function InvoiceImportReceiveForm({ materials, jobs }: { materials: Mater
     const parsedRows = parseInvoiceText(invoiceText, availableMaterials);
     setRows(parsedRows);
     setError(null);
+  }
+
+  async function handleExtractInvoiceText() {
+    if (!invoicePdf) {
+      setExtractionError('Select a PDF file first.');
+      setExtractionMessage(null);
+      return;
+    }
+
+    setIsExtracting(true);
+    setExtractionError(null);
+    setExtractionMessage('Extracting text from PDF...');
+
+    try {
+      const formData = new FormData();
+      formData.append('file', invoicePdf);
+
+      const response = await fetch('/api/invoices/extract-text', {
+        method: 'POST',
+        body: formData
+      });
+
+      const payload = (await response.json()) as { text?: string; error?: string };
+      if (!response.ok) {
+        setExtractionError(payload.error ?? 'Unable to extract text from PDF.');
+        setExtractionMessage(null);
+        return;
+      }
+
+      setInvoiceText(payload.text ?? '');
+      setExtractionMessage('Invoice text extracted successfully.');
+    } catch {
+      setExtractionError('Unable to extract text from PDF.');
+      setExtractionMessage(null);
+    } finally {
+      setIsExtracting(false);
+    }
   }
 
   function updateRow(id: string, updater: (row: ParsedRow) => ParsedRow) {
@@ -210,6 +251,25 @@ export function InvoiceImportReceiveForm({ materials, jobs }: { materials: Mater
         setIsSubmitting(true);
       }}
     >
+      <label htmlFor="invoicePdf">Invoice PDF</label>
+      <input
+        id="invoicePdf"
+        type="file"
+        accept=".pdf,application/pdf"
+        onChange={(event) => {
+          const nextFile = event.target.files?.[0] ?? null;
+          setInvoicePdf(nextFile);
+          setExtractionError(null);
+          setExtractionMessage(nextFile ? `Selected: ${nextFile.name}` : null);
+        }}
+      />
+      <button type="button" onClick={handleExtractInvoiceText} disabled={!invoicePdf || isExtracting}>
+        {isExtracting ? 'Extracting...' : 'Upload and Extract Text'}
+      </button>
+
+      {extractionMessage ? <p style={{ color: '#027a48', marginBottom: '0.75rem' }}>{extractionMessage}</p> : null}
+      {extractionError ? <p style={{ color: '#b42318', marginBottom: '0.75rem' }}>{extractionError}</p> : null}
+
       <label htmlFor="invoiceText">Paste Invoice Text</label>
       <textarea
         id="invoiceText"
