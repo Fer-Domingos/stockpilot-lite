@@ -42,11 +42,21 @@ export function ReceiveMaterialForm({ materials, jobs }: { materials: MaterialRe
     try {
       const formData = new FormData();
       formData.append('file', selectedFile);
+      const endpointPath = '/api/invoices/upload';
 
-      const response = await fetch('/api/invoices/upload', {
+      const response = await fetch(endpointPath, {
         method: 'POST',
         body: formData
       });
+      console.info('[Invoice Upload] Response received', {
+        endpointPath,
+        status: response.status
+      });
+
+      const contentType = response.headers.get('content-type') ?? '';
+      if (!contentType.toLowerCase().includes('application/json')) {
+        throw new Error('Extract-text API returned HTML instead of JSON');
+      }
 
       const payload = (await response.json()) as UploadResponse & { error?: string };
 
