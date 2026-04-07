@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react';
 
-import { JobRecord, JobStatus, createJob, deleteJob, updateJob } from '@/app/actions';
+import { JobRecord, JobStatus, createJob, deleteJob, importJobsFromExcel, listJobs, updateJob } from '@/app/actions';
 import { AppRole } from '@/lib/demo-data';
 import { canManageInventory } from '@/lib/permissions';
 
@@ -27,6 +27,13 @@ export function JobsManager({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<JobFormState>(emptyForm);
   const [error, setError] = useState('');
+  const [importSummary, setImportSummary] = useState<{
+    totalRowsRead: number;
+    imported: number;
+    skippedDuplicates: number;
+    invalidRows: number;
+    errors: string[];
+  } | null>(null);
   const [isPending, startTransition] = useTransition();
   const isReadOnly = !canManageInventory(role);
 
@@ -34,6 +41,11 @@ export function JobsManager({
     setEditingId(null);
     setForm(emptyForm);
     setError('');
+  }
+
+  async function refreshJobsList() {
+    const result = await listJobs();
+    setJobs(result.data);
   }
 
   function normalizeJobForm(payload: JobFormState): JobFormState {
@@ -61,6 +73,7 @@ export function JobsManager({
             onSubmit={(event) => {
               event.preventDefault();
               setError('');
+              setImportSummary(null);
 
               const normalizedForm = normalizeJobForm(form);
               const currentEditingId = editingId;
@@ -148,6 +161,67 @@ export function JobsManager({
             </button>
           ) : null}
         </div>
+        {!isReadOnly ? (
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              setError('');
+              setImportSummary(null);
+
+              const formElement = event.currentTarget;
+              const fileInput = formElement.elements.namedItem('jobsImportFile') as HTMLInputElement | null;
+              const file = fileInput?.files?.[0];
+
+              if (!file) {
+                setError('Please select an .xlsx file before importing.');
+                return;
+              }
+
+              startTransition(async () => {
+                const result = await importJobsFromExcel(file);
+
+                if (!result.ok) {
+                  setError(result.error ?? 'Failed to import jobs.');
+                  return;
+                }
+
+                if (!result.data) {
+                  setError('Import completed, but summary details were unavailable.');
+                  return;
+                }
+
+                setImportSummary(result.data);
+                await refreshJobsList();
+                formElement.reset();
+              });
+            }}
+          >
+            <label htmlFor="jobsImportFile">Import Jobs (.xlsx)</label>
+            <div className="row-actions">
+              <input id="jobsImportFile" name="jobsImportFile" type="file" accept=".xlsx" required />
+              <button className="secondary-button" type="submit" disabled={isPending}>
+                {isPending ? 'Importing...' : 'Import Jobs'}
+              </button>
+            </div>
+          </form>
+        ) : null}
+        {importSummary ? (
+          <div className="card" style={{ marginTop: '1rem' }}>
+            <h4 style={{ marginTop: 0 }}>Import Summary</h4>
+            <p className="muted">Total rows read: {importSummary.totalRowsRead}</p>
+            <p className="muted">Imported: {importSummary.imported}</p>
+            <p className="muted">Skipped duplicates: {importSummary.skippedDuplicates}</p>
+            <p className="muted">Invalid rows: {importSummary.invalidRows}</p>
+            <p className="muted">Errors: {importSummary.errors.length}</p>
+            {importSummary.errors.length > 0 ? (
+              <ul>
+                {importSummary.errors.map((entry) => (
+                  <li key={entry}>{entry}</li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        ) : null}
         {isReadOnly ? <p className="muted">PM access is read-only. Job management actions are hidden.</p> : null}
         <table>
           <thead>
