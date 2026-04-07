@@ -33,6 +33,8 @@ type CreateMaterialDraft = {
 };
 
 const quantityPattern = /(?:^|\s)(\d+(?:\.\d+)?)(?:\s|$)/;
+const scannedPdfMessage =
+  'This PDF appears to be scanned (image-based). Please paste the invoice text manually or upload a text-based PDF.';
 
 function normalizeText(value: string) {
   return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
@@ -151,12 +153,21 @@ export function InvoiceImportReceiveForm({ materials, jobs }: { materials: Mater
   const [isCreatingMaterial, startCreateTransition] = useTransition();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [extractionGuidance, setExtractionGuidance] = useState<string | null>(null);
 
   const openJobs = useMemo(() => jobs.filter((job) => job.status === 'OPEN'), [jobs]);
 
   function handleParse() {
+    if (!invoiceText.trim()) {
+      setRows([]);
+      setExtractionGuidance(scannedPdfMessage);
+      setError(null);
+      return;
+    }
+
     const parsedRows = parseInvoiceText(invoiceText, availableMaterials);
     setRows(parsedRows);
+    setExtractionGuidance(parsedRows.length === 0 ? scannedPdfMessage : null);
     setError(null);
   }
 
@@ -215,7 +226,12 @@ export function InvoiceImportReceiveForm({ materials, jobs }: { materials: Mater
         id="invoiceText"
         rows={8}
         value={invoiceText}
-        onChange={(event) => setInvoiceText(event.target.value)}
+        onChange={(event) => {
+          setInvoiceText(event.target.value);
+          if (extractionGuidance) {
+            setExtractionGuidance(null);
+          }
+        }}
         placeholder="Paste lines copied from an invoice here..."
       />
 
@@ -231,6 +247,20 @@ export function InvoiceImportReceiveForm({ materials, jobs }: { materials: Mater
       <input type="hidden" name="rowsPayload" />
 
       {error ? <p style={{ color: '#b42318', marginBottom: '0.75rem' }}>{error}</p> : null}
+      {extractionGuidance ? (
+        <p
+          style={{
+            marginBottom: '0.75rem',
+            border: '1px solid #fecdca',
+            backgroundColor: '#fff6f3',
+            color: '#b54708',
+            borderRadius: '6px',
+            padding: '0.625rem 0.75rem'
+          }}
+        >
+          {extractionGuidance}
+        </p>
+      ) : null}
 
       {rows.length > 0 ? (
         <table>
