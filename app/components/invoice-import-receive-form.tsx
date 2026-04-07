@@ -143,6 +143,9 @@ function parseInvoiceText(rawText: string, materials: MaterialRecord[]) {
 
 export function InvoiceImportReceiveForm({ materials, jobs }: { materials: MaterialRecord[]; jobs: JobRecord[] }) {
   const [invoiceText, setInvoiceText] = useState('');
+  const [invoiceFile, setInvoiceFile] = useState<File | null>(null);
+  const [isExtracting, setIsExtracting] = useState(false);
+  const [extractError, setExtractError] = useState<string | null>(null);
   const [rows, setRows] = useState<ParsedRow[]>([]);
   const [availableMaterials, setAvailableMaterials] = useState<MaterialRecord[]>(materials);
   const [activeCreateRowId, setActiveCreateRowId] = useState<string | null>(null);
@@ -158,6 +161,48 @@ export function InvoiceImportReceiveForm({ materials, jobs }: { materials: Mater
     const parsedRows = parseInvoiceText(invoiceText, availableMaterials);
     setRows(parsedRows);
     setError(null);
+  }
+
+  async function handleExtractText() {
+    if (!invoiceFile) {
+      setExtractError('Select a PDF file to extract text.');
+      return;
+    }
+
+    setExtractError(null);
+    setIsExtracting(true);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', invoiceFile);
+
+      const response = await fetch('/api/invoices/extract-text', {
+        method: 'POST',
+        body: formData
+      });
+
+      const payload = (await response.json()) as {
+        extractedText?: string;
+        text?: string;
+      };
+
+      if (!response.ok) {
+        throw new Error('extract-failed');
+      }
+
+      const extractedText = payload.extractedText ?? payload.text ?? '';
+      if (!extractedText.trim()) {
+        throw new Error('empty-extract');
+      }
+
+      setInvoiceText(extractedText);
+      setRows([]);
+      setError(null);
+    } catch {
+      setExtractError('This PDF needs OCR or manual review');
+    } finally {
+      setIsExtracting(false);
+    }
   }
 
   function updateRow(id: string, updater: (row: ParsedRow) => ParsedRow) {
@@ -211,6 +256,20 @@ export function InvoiceImportReceiveForm({ materials, jobs }: { materials: Mater
       }}
     >
       <label htmlFor="invoiceText">Paste Invoice Text</label>
+      <label htmlFor="invoiceExtractFile">Invoice PDF</label>
+      <input
+        id="invoiceExtractFile"
+        type="file"
+        accept=".pdf,application/pdf"
+        onChange={(event) => setInvoiceFile(event.target.files?.[0] ?? null)}
+      />
+
+      <button type="button" onClick={handleExtractText} disabled={isExtracting}>
+        {isExtracting ? 'Extracting...' : 'Upload and Extract Text'}
+      </button>
+
+      {extractError ? <p style={{ color: '#b42318', marginBottom: '0.75rem' }}>{extractError}</p> : null}
+
       <textarea
         id="invoiceText"
         rows={8}
