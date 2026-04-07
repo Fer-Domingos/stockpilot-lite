@@ -22,7 +22,10 @@
     "next": "14.2.12",
     "react": "18.3.1",
     "react-dom": "18.3.1",
-    "@vercel/blob": "latest"
+    "@vercel/blob": "latest",
+    "@napi-rs/canvas": "^0.1.67",
+    "pdfjs-dist": "^4.10.38",
+    "tesseract.js": "^6.0.1"
   },
   "devDependencies": {
     "@types/node": "20.16.5",
