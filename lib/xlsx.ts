@@ -1,3 +1,5 @@
+import { inflateRawSync } from 'node:zlib';
+
 const XML_HEADER = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
 
 type CellValue = string | number | null | undefined;
@@ -319,4 +321,174 @@ export function createWorkbookBuffer(sheets: SheetDefinition[]) {
     { name: 'xl/styles.xml', content: buildStylesXml() },
     ...sheets.map((sheet, index) => ({ name: `xl/worksheets/sheet${index + 1}.xml`, content: buildSheetXml(sheet, lookup) }))
   ]);
+}
+
+type ParsedXlsxResult = {
+  rows: string[][];
+  error?: string;
+};
+
+function decodeXmlEntities(value: string) {
+  return value
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'");
+}
+
+function columnIndexFromRef(reference: string) {
+  const letters = reference.replace(/\d+/g, '').toUpperCase();
+  let index = 0;
+  for (const letter of letters) {
+    index = index * 26 + (letter.charCodeAt(0) - 64);
+  }
+  return Math.max(index - 1, 0);
+}
+
+function readZipEntries(buffer: Buffer) {
+  const entries = new Map<string, Buffer>();
+  let eocdOffset = -1;
+
+  for (let offset = buffer.length - 22; offset >= Math.max(0, buffer.length - 65557); offset -= 1) {
+    if (buffer.readUInt32LE(offset) === 0x06054b50) {
+      eocdOffset = offset;
+      break;
+    }
+  }
+
+  if (eocdOffset === -1) {
+    throw new Error('Invalid XLSX file (EOCD not found).');
+  }
+
+  const centralDirectorySize = buffer.readUInt32LE(eocdOffset + 12);
+  const centralDirectoryOffset = buffer.readUInt32LE(eocdOffset + 16);
+  const centralDirectoryEnd = centralDirectoryOffset + centralDirectorySize;
+  let offset = centralDirectoryOffset;
+
+  while (offset < centralDirectoryEnd) {
+    if (buffer.readUInt32LE(offset) !== 0x02014b50) {
+      throw new Error('Invalid XLSX file (bad central directory header).');
+    }
+
+    const compressionMethod = buffer.readUInt16LE(offset + 10);
+    const compressedSize = buffer.readUInt32LE(offset + 20);
+    const fileNameLength = buffer.readUInt16LE(offset + 28);
+    const extraLength = buffer.readUInt16LE(offset + 30);
+    const commentLength = buffer.readUInt16LE(offset + 32);
+    const localHeaderOffset = buffer.readUInt32LE(offset + 42);
+    const nameStart = offset + 46;
+    const fileName = buffer.subarray(nameStart, nameStart + fileNameLength).toString('utf8');
+
+    if (buffer.readUInt32LE(localHeaderOffset) !== 0x04034b50) {
+      throw new Error('Invalid XLSX file (bad local file header).');
+    }
+
+    const localNameLength = buffer.readUInt16LE(localHeaderOffset + 26);
+    const localExtraLength = buffer.readUInt16LE(localHeaderOffset + 28);
+    const dataStart = localHeaderOffset + 30 + localNameLength + localExtraLength;
+    const compressedData = buffer.subarray(dataStart, dataStart + compressedSize);
+    const data =
+      compressionMethod === 0
+        ? compressedData
+        : compressionMethod === 8
+          ? inflateRawSync(compressedData)
+          : null;
+
+    if (!data) {
+      throw new Error(`Unsupported XLSX compression method: ${compressionMethod}`);
+    }
+
+    entries.set(fileName, data);
+    offset += 46 + fileNameLength + extraLength + commentLength;
+  }
+
+  return entries;
+}
+
+function parseSharedStrings(sharedStringsXml: string) {
+  const sharedStrings: string[] = [];
+  const itemRegex = /<si\b[^>]*>([\s\S]*?)<\/si>/g;
+
+  for (const itemMatch of sharedStringsXml.matchAll(itemRegex)) {
+    const payload = itemMatch[1] ?? '';
+    const textParts = Array.from(payload.matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/g)).map((entry) =>
+      decodeXmlEntities(entry[1] ?? ''),
+    );
+    sharedStrings.push(textParts.join(''));
+  }
+
+  return sharedStrings;
+}
+
+function parseSheetRows(sheetXml: string, sharedStrings: string[]) {
+  const rows: string[][] = [];
+  const rowRegex = /<row\b[^>]*>([\s\S]*?)<\/row>/g;
+
+  for (const rowMatch of sheetXml.matchAll(rowRegex)) {
+    const payload = rowMatch[1] ?? '';
+    const row: string[] = [];
+    const cellRegex = /<c\b([^>]*)>([\s\S]*?)<\/c>/g;
+
+    for (const cellMatch of payload.matchAll(cellRegex)) {
+      const attributes = cellMatch[1] ?? '';
+      const cellPayload = cellMatch[2] ?? '';
+      const refMatch = attributes.match(/\br="([A-Z]+\d+)"/);
+      const typeMatch = attributes.match(/\bt="([^"]+)"/);
+      const columnIndex = refMatch ? columnIndexFromRef(refMatch[1]) : row.length;
+      const rawValue = cellPayload.match(/<v>([\s\S]*?)<\/v>/)?.[1] ?? '';
+
+      let value = '';
+      switch (typeMatch?.[1]) {
+        case 's': {
+          const stringIndex = Number.parseInt(rawValue, 10);
+          value = Number.isNaN(stringIndex) ? '' : sharedStrings[stringIndex] ?? '';
+          break;
+        }
+        case 'inlineStr': {
+          value = decodeXmlEntities(cellPayload.match(/<t\b[^>]*>([\s\S]*?)<\/t>/)?.[1] ?? '');
+          break;
+        }
+        default: {
+          value = decodeXmlEntities(rawValue);
+          break;
+        }
+      }
+
+      row[columnIndex] = value.trim();
+    }
+
+    while (row.length > 0 && !row[row.length - 1]) {
+      row.pop();
+    }
+    rows.push(row.map((cell) => cell ?? ''));
+  }
+
+  return rows;
+}
+
+export function parseXlsxRows(buffer: Buffer): ParsedXlsxResult {
+  try {
+    const entries = readZipEntries(buffer);
+    const workbookRels = entries.get('xl/_rels/workbook.xml.rels')?.toString('utf8') ?? '';
+    const firstWorksheetTarget =
+      workbookRels.match(
+        /<Relationship\b[^>]*Type="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/relationships\/worksheet"[^>]*Target="([^"]+)"/,
+      )?.[1] ?? 'worksheets/sheet1.xml';
+    const worksheetPath = `xl/${firstWorksheetTarget.replace(/^\/?xl\//, '').replace(/^\/+/, '')}`;
+    const worksheetXml = entries.get(worksheetPath)?.toString('utf8') ?? entries.get('xl/worksheets/sheet1.xml')?.toString('utf8');
+
+    if (!worksheetXml) {
+      return { rows: [], error: 'Unable to read the first worksheet from this file.' };
+    }
+
+    const sharedStringsXml = entries.get('xl/sharedStrings.xml')?.toString('utf8') ?? '';
+    const sharedStrings = sharedStringsXml ? parseSharedStrings(sharedStringsXml) : [];
+    const rows = parseSheetRows(worksheetXml, sharedStrings);
+
+    return { rows };
+  } catch (error) {
+    console.error('Failed to parse XLSX rows:', error);
+    return { rows: [], error: 'Unable to parse this XLSX file.' };
+  }
 }

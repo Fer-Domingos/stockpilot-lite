@@ -1,8 +1,17 @@
 'use client';
 
 import { useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
 
-import { JobRecord, JobStatus, createJob, deleteJob, updateJob } from '@/app/actions';
+import {
+  JobImportSummary,
+  JobRecord,
+  JobStatus,
+  createJob,
+  deleteJob,
+  importJobsFromExcel,
+  updateJob
+} from '@/app/actions';
 import { AppRole } from '@/lib/demo-data';
 import { canManageInventory } from '@/lib/permissions';
 
@@ -24,10 +33,15 @@ export function JobsManager({
   role: AppRole;
 }) {
   const [jobs, setJobs] = useState<JobRecord[]>(initialJobs);
+  const [selectedImportFile, setSelectedImportFile] = useState<File | null>(null);
+  const [importSummary, setImportSummary] = useState<JobImportSummary | null>(null);
+  const [importError, setImportError] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<JobFormState>(emptyForm);
   const [error, setError] = useState('');
   const [isPending, startTransition] = useTransition();
+  const [isImportPending, startImportTransition] = useTransition();
+  const router = useRouter();
   const isReadOnly = !canManageInventory(role);
 
   function resetForm() {
@@ -46,6 +60,76 @@ export function JobsManager({
 
   return (
     <>
+      {!isReadOnly ? (
+        <section className="card">
+          <div className="section-title">
+            <h3>Import Jobs (.xlsx)</h3>
+          </div>
+          <p className="muted">Required columns: Job Number, Job Name. Optional: Status (OPEN/CLOSED).</p>
+          {!!importError && <p className="muted">{importError}</p>}
+          {importSummary ? (
+            <div className="muted">
+              <p>Total rows read: {importSummary.totalRowsRead}</p>
+              <p>Imported: {importSummary.imported}</p>
+              <p>Skipped duplicates: {importSummary.skippedDuplicates}</p>
+              <p>Invalid rows: {importSummary.invalidRows}</p>
+              <p>Errors: {importSummary.errors.length}</p>
+              {importSummary.errors.length > 0 ? (
+                <ul>
+                  {importSummary.errors.slice(0, 10).map((entry) => (
+                    <li key={entry}>{entry}</li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+          ) : null}
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              setImportError('');
+              setImportSummary(null);
+
+              if (!selectedImportFile) {
+                setImportError('Please select an XLSX file.');
+                return;
+              }
+
+              startImportTransition(async () => {
+                const result = await importJobsFromExcel(selectedImportFile);
+
+                if (!result.ok || !result.data) {
+                  setImportError(result.error ?? 'Import failed.');
+                  return;
+                }
+
+                setImportSummary({
+                  totalRowsRead: result.data.totalRowsRead,
+                  imported: result.data.imported,
+                  skippedDuplicates: result.data.skippedDuplicates,
+                  invalidRows: result.data.invalidRows,
+                  errors: result.data.errors
+                });
+                setJobs(result.data.jobs);
+                setSelectedImportFile(null);
+                router.refresh();
+              });
+            }}
+          >
+            <label htmlFor="jobsImportFile">Excel File</label>
+            <input
+              id="jobsImportFile"
+              type="file"
+              accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              onChange={(event) => setSelectedImportFile(event.target.files?.[0] ?? null)}
+              disabled={isImportPending}
+            />
+            <button type="submit" disabled={isImportPending}>
+              {isImportPending ? 'Importing...' : 'Import Jobs'}
+            </button>
+          </form>
+        </section>
+      ) : null}
+
       {!isReadOnly ? (
         <section className="card">
           <div className="section-title">
