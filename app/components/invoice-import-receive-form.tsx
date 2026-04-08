@@ -14,6 +14,9 @@ type DestinationType = 'SHOP' | 'JOB';
 type ParsedRow = {
   id: string;
   originalLine: string;
+  parsedDescription: string;
+  suggestedMaterialName: string;
+  matchConfidence: 'HIGH' | 'MEDIUM' | 'LOW' | 'UNMATCHED';
   quantity: string;
   unit: string;
   materialId: string | null;
@@ -33,12 +36,51 @@ type CreateMaterialDraft = {
 };
 
 const quantityPattern = /(?:^|\s)(\d+(?:\.\d+)?)(?:\s|$)/;
+const lineIgnorePattern =
+  /\b(?:invoice|inv|date|subtotal|tax|total|balance|payment|terms|due|remit|ship to|bill to)\b/i;
+const quantityHintPatterns = [
+  /\bqty(?:uantity)?\.?\s*[:x-]?\s*(\d+(?:\.\d+)?)\b/i,
+  /\b(\d+(?:\.\d+)?)\s*(?:x|ea|each|pcs?|units?|sheets?)\b/i,
+  /\b(?:ea|each|pcs?|units?|sheets?)\s*(\d+(?:\.\d+)?)\b/i
+];
+const quantityUnitsPattern = /\b(?:ea|each|unit|units|sheet|sheets|pcs|pc|x)\b/gi;
+const ignoredTokens = new Set([
+  'and',
+  'for',
+  'with',
+  'the',
+  'from',
+  'invoice',
+  'item',
+  'material',
+  'stock',
+  'job',
+  'qty'
+]);
 
 function normalizeText(value: string) {
   return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+function getMeaningfulTokens(value: string) {
+  return normalizeText(value)
+    .split(' ')
+    .filter((token) => token.length > 1 && !ignoredTokens.has(token) && !/^\d+$/.test(token));
+}
+
 function parseQuantity(line: string) {
+  for (const pattern of quantityHintPatterns) {
+    const match = line.match(pattern);
+    if (!match) {
+      continue;
+    }
+
+    const parsed = Number(match[1]);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return String(Math.floor(parsed));
+    }
+  }
+
   const match = line.match(quantityPattern);
   if (!match) {
     return '';
@@ -66,9 +108,16 @@ function parseUnit(line: string, fallback: string) {
 }
 
 function buildSuggestedMaterialName(line: string) {
-  const withoutQty = line.replace(quantityPattern, ' ');
+  const withoutQty = line
+    .replace(/\bqty(?:uantity)?\.?\s*[:x-]?\s*\d+(?:\.\d+)?\b/gi, ' ')
+    .replace(/\b\d+(?:\.\d+)?\s*(?:x|ea|each|pcs?|units?|sheets?)\b/gi, ' ')
+    .replace(/\b(?:ea|each|pcs?|units?|sheets?)\s*\d+(?:\.\d+)?\b/gi, ' ')
+    .replace(quantityPattern, ' ');
   const withoutDecorators = withoutQty
-    .replace(/\b(?:ea|each|unit|units|sheet|sheets|pcs|pc|x)\b/gi, ' ')
+    .replace(quantityUnitsPattern, ' ')
+    .replace(/\$?\d+\.\d{2}\b/g, ' ')
+    .replace(/\b\d{5,}\b/g, ' ')
+    .replace(/\b[A-Z0-9]{2,}-[A-Z0-9-]+\b/g, ' ')
     .replace(/[()\[\],]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -86,26 +135,32 @@ function matchMaterial(line: string, materials: MaterialRecord[]) {
   for (const token of skuTokens) {
     const skuMatch = materials.find((material) => material.sku.toUpperCase() === token);
     if (skuMatch) {
-      return skuMatch;
+      return { material: skuMatch, confidence: 'HIGH' as const };
     }
   }
 
-  const normalizedLine = normalizeText(line);
-  if (!normalizedLine) {
-    return null;
+  const descriptionTokens = getMeaningfulTokens(line);
+  if (descriptionTokens.length === 0) {
+    return { material: null, confidence: 'UNMATCHED' as const };
   }
 
   let bestMatch: MaterialRecord | null = null;
   let bestScore = 0;
 
   for (const material of materials) {
-    const normalizedName = normalizeText(material.name);
-    if (!normalizedName) {
+    const nameTokens = getMeaningfulTokens(material.name);
+    if (nameTokens.length === 0) {
       continue;
     }
 
-    const nameTokens = normalizedName.split(' ').filter(Boolean);
-    const score = nameTokens.filter((token) => normalizedLine.includes(token)).length;
+    const overlap = nameTokens.filter((token) => descriptionTokens.includes(token)).length;
+    if (overlap === 0) {
+      continue;
+    }
+
+    const coverageScore = overlap / nameTokens.length;
+    const precisionScore = overlap / descriptionTokens.length;
+    const score = coverageScore * 0.7 + precisionScore * 0.3;
 
     if (score > bestScore) {
       bestScore = score;
@@ -113,22 +168,40 @@ function matchMaterial(line: string, materials: MaterialRecord[]) {
     }
   }
 
-  return bestScore > 0 ? bestMatch : null;
+  if (!bestMatch) {
+    return { material: null, confidence: 'UNMATCHED' as const };
+  }
+
+  if (bestScore >= 0.85) {
+    return { material: bestMatch, confidence: 'HIGH' as const };
+  }
+
+  if (bestScore >= 0.55) {
+    return { material: bestMatch, confidence: 'MEDIUM' as const };
+  }
+
+  return { material: bestMatch, confidence: 'LOW' as const };
 }
 
 function parseInvoiceText(rawText: string, materials: MaterialRecord[]) {
   const lines = rawText
     .split(/\r?\n/)
     .map((line) => line.trim())
-    .filter((line) => line.length > 0);
+    .filter((line) => line.length > 0)
+    .filter((line) => !lineIgnorePattern.test(line));
 
   return lines.map((line, index) => {
-    const matchedMaterial = matchMaterial(line, materials);
+    const parsedDescription = buildSuggestedMaterialName(line);
+    const matchResult = matchMaterial(parsedDescription, materials);
+    const matchedMaterial = matchResult.material;
     const quantity = parseQuantity(line);
 
     return {
       id: `row-${index}`,
       originalLine: line,
+      parsedDescription,
+      suggestedMaterialName: matchedMaterial?.name ?? parsedDescription,
+      matchConfidence: matchResult.confidence,
       quantity,
       unit: parseUnit(line, matchedMaterial?.unit ?? 'UNIT'),
       materialId: matchedMaterial?.id ?? null,
@@ -263,9 +336,9 @@ export function InvoiceImportReceiveForm({ materials, jobs }: { materials: Mater
                   </td>
                   <td>{row.originalLine}</td>
                   <td>
-                    {row.materialId ? (
+                    <div>
                       <select
-                        value={row.materialId}
+                        value={row.materialId ?? ''}
                         onChange={(event) =>
                           updateRow(row.id, (current) => ({
                             ...current,
@@ -277,28 +350,37 @@ export function InvoiceImportReceiveForm({ materials, jobs }: { materials: Mater
                           }))
                         }
                       >
+                        <option value="">Select material…</option>
                         {availableMaterials.map((material) => (
                           <option key={material.id} value={material.id}>
                             {material.name} ({material.sku})
                           </option>
                         ))}
                       </select>
-                    ) : (
-                      <div>
-                        <span style={{ color: '#b42318', marginRight: '0.5rem' }}>No match</span>
-                        <button
-                          type="button"
-                          className="secondary-button"
-                          onClick={() => openCreateMaterial(row)}
-                          disabled={isCreatingMaterial}
-                        >
-                          Create Material
-                        </button>
+                      <p className="muted" style={{ marginBottom: '0.5rem' }}>
+                        Suggested: {row.suggestedMaterialName || 'No suggestion'} ({row.matchConfidence})
+                      </p>
+                      {!row.materialId ? (
+                        <div>
+                          <span style={{ color: '#b42318', marginRight: '0.5rem' }}>No confirmed match</span>
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={() => openCreateMaterial(row)}
+                            disabled={isCreatingMaterial}
+                          >
+                            Create Material
+                          </button>
+                          <p className="muted" style={{ marginBottom: 0 }}>
+                            Select an existing material or create a new one.
+                          </p>
+                        </div>
+                      ) : (
                         <p className="muted" style={{ marginBottom: 0 }}>
-                          Review and edit before creating.
+                          Parsed description: {row.parsedDescription}
                         </p>
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </td>
                   <td>
                     <input
