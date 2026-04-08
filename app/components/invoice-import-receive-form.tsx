@@ -151,13 +151,26 @@ export function InvoiceImportReceiveForm({ materials, jobs }: { materials: Mater
   const [isCreatingMaterial, startCreateTransition] = useTransition();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [extractionGuidance, setExtractionGuidance] = useState<string | null>(null);
 
   const openJobs = useMemo(() => jobs.filter((job) => job.status === 'OPEN'), [jobs]);
 
   function handleParse() {
+    const trimmedInvoiceText = invoiceText.trim();
+
+    if (!trimmedInvoiceText) {
+      setRows([]);
+      setError(null);
+      setExtractionGuidance(
+        'This PDF appears to be scanned (image-based). Please paste the invoice text manually or upload a text-based PDF.'
+      );
+      return;
+    }
+
     const parsedRows = parseInvoiceText(invoiceText, availableMaterials);
     setRows(parsedRows);
     setError(null);
+    setExtractionGuidance(null);
   }
 
   function updateRow(id: string, updater: (row: ParsedRow) => ParsedRow) {
@@ -231,6 +244,20 @@ export function InvoiceImportReceiveForm({ materials, jobs }: { materials: Mater
       <input type="hidden" name="rowsPayload" />
 
       {error ? <p style={{ color: '#b42318', marginBottom: '0.75rem' }}>{error}</p> : null}
+      {extractionGuidance ? (
+        <p
+          style={{
+            marginBottom: '0.75rem',
+            borderRadius: '0.5rem',
+            border: '1px solid #fecdca',
+            background: '#fef3f2',
+            color: '#b42318',
+            padding: '0.625rem 0.75rem'
+          }}
+        >
+          {extractionGuidance}
+        </p>
+      ) : null}
 
       {rows.length > 0 ? (
         <table>
