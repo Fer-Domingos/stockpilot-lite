@@ -10,7 +10,9 @@ type UploadResponse = {
 };
 
 const maxSizeMb = 10;
-const acceptedTypes = ['application/pdf', 'image/jpeg', 'image/png'];
+const acceptedTypes = ['application/pdf'];
+const scannedPdfMessage =
+  'This PDF appears to be scanned (image-based). Please paste the invoice text manually or upload a text-based PDF.';
 
 export function ReceiveMaterialForm({ materials, jobs }: { materials: MaterialRecord[]; jobs: JobRecord[] }) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -18,16 +20,16 @@ export function ReceiveMaterialForm({ materials, jobs }: { materials: MaterialRe
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadedInvoice, setUploadedInvoice] = useState<UploadResponse | null>(null);
 
-  const acceptValue = useMemo(() => '.pdf,.jpg,.jpeg,.png', []);
+  const acceptValue = useMemo(() => '.pdf', []);
 
   async function handleInvoiceUpload() {
     if (!selectedFile) {
-      setUploadError('Select a PDF or image file to upload.');
+      setUploadError('Select a PDF file to upload.');
       return;
     }
 
     if (!acceptedTypes.includes(selectedFile.type)) {
-      setUploadError('Only PDF, JPG, JPEG, and PNG files are allowed.');
+      setUploadError('Only PDF files are allowed for extraction.');
       return;
     }
 
@@ -55,6 +57,31 @@ export function ReceiveMaterialForm({ materials, jobs }: { materials: MaterialRe
       }
 
       setUploadedInvoice({ fileName: payload.fileName, url: payload.url });
+
+      const extractFormData = new FormData();
+      extractFormData.append('file', selectedFile);
+
+      const extractResponse = await fetch('/api/invoices/extract-text', {
+        method: 'POST',
+        body: extractFormData
+      });
+      const extractPayload = (await extractResponse.json()) as { text?: string };
+
+      if (!extractResponse.ok || !extractPayload.text?.trim()) {
+        window.dispatchEvent(
+          new CustomEvent('invoice-text-updated', {
+            detail: { error: scannedPdfMessage }
+          })
+        );
+        setUploadError(scannedPdfMessage);
+        return;
+      }
+
+      window.dispatchEvent(
+        new CustomEvent('invoice-text-updated', {
+          detail: { text: extractPayload.text }
+        })
+      );
     } catch (error) {
       setUploadError(error instanceof Error ? error.message : 'Upload failed.');
     } finally {
@@ -67,7 +94,7 @@ export function ReceiveMaterialForm({ materials, jobs }: { materials: MaterialRe
       <div style={{ border: '1px solid #eaecf0', borderRadius: '0.75rem', padding: '0.75rem', marginBottom: '1rem' }}>
         <h4 style={{ marginTop: 0, marginBottom: '0.5rem' }}>Upload Invoice File</h4>
         <p className="muted" style={{ marginTop: 0 }}>
-          Upload a PDF or image invoice and attach it to this receipt.
+          Upload a PDF invoice, attach it to this receipt, and auto-fill invoice text for import.
         </p>
 
         <label htmlFor="invoiceFile">Invoice File</label>
@@ -80,7 +107,7 @@ export function ReceiveMaterialForm({ materials, jobs }: { materials: MaterialRe
         />
 
         <button type="button" onClick={handleInvoiceUpload} disabled={isUploading} style={{ marginTop: '0.5rem' }}>
-          {isUploading ? 'Uploading...' : 'Upload Invoice'}
+          {isUploading ? 'Uploading and Extracting...' : 'Upload PDF and Extract Text'}
         </button>
 
         {uploadError ? <p style={{ color: '#b42318', marginTop: '0.5rem' }}>{uploadError}</p> : null}
