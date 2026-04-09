@@ -32,24 +32,53 @@ type CreateMaterialDraft = {
   notes: string;
 };
 
-const quantityPattern = /(?:^|\s)(\d+(?:\.\d+)?)(?:\s|$)/;
+const lineNumberPattern = /^\s*[1-3](?:\s|$)/;
+const skipLinePattern = /\b(?:handling|tax|freight|delivery|subtotal|total)\b/i;
+const numberTokenPattern = /\d+(?:\.\d+)?/g;
 
 function normalizeText(value: string) {
   return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
 function parseQuantity(line: string) {
-  const match = line.match(quantityPattern);
-  if (!match) {
-    return '';
+  const numberTokens = [...line.matchAll(numberTokenPattern)].map((match) => ({
+    value: Number(match[0]),
+    end: (match.index ?? 0) + match[0].length
+  }));
+
+  if (numberTokens.length === 0) {
+    return { quantity: '', quantityEndIndex: -1 };
   }
 
-  const parsed = Number(match[1]);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return '';
+  const startsWithNumber = /^\s*\d+(?:\.\d+)?/.test(line);
+  const first = numberTokens[0];
+  const second = numberTokens[1];
+
+  if (
+    startsWithNumber &&
+    first &&
+    second &&
+    first.value >= 1 &&
+    first.value <= 3 &&
+    second.value > first.value &&
+    second.value > 1
+  ) {
+    return { quantity: String(Math.floor(second.value)), quantityEndIndex: second.end };
   }
 
-  return String(Math.floor(parsed));
+  if (startsWithNumber && first && first.value > 1) {
+    return { quantity: String(Math.floor(first.value)), quantityEndIndex: first.end };
+  }
+
+  const firstGreaterThanOne = numberTokens.find((token) => token.value > 1);
+  if (firstGreaterThanOne) {
+    return {
+      quantity: String(Math.floor(firstGreaterThanOne.value)),
+      quantityEndIndex: firstGreaterThanOne.end
+    };
+  }
+
+  return { quantity: '', quantityEndIndex: -1 };
 }
 
 function parseUnit(line: string, fallback: string) {
@@ -65,22 +94,65 @@ function parseUnit(line: string, fallback: string) {
   return fallback;
 }
 
-function buildSuggestedMaterialName(line: string) {
-  const withoutQty = line.replace(quantityPattern, ' ');
-  const withoutDecorators = withoutQty
-    .replace(/\b(?:ea|each|unit|units|sheet|sheets|pcs|pc|x)\b/gi, ' ')
+function cleanDescription(raw: string) {
+  return raw
+    .replace(/\$\s*\d[\d,]*(?:\.\d{2})?/g, ' ')
+    .replace(/\b\d[\d,]*\.\d{2}\b/g, ' ')
+    .replace(/\b(?:ea|each|unit|units)\b/gi, ' ')
     .replace(/[()\[\],]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
 
-  if (!withoutDecorators) {
+function buildSuggestedMaterialName(line: string) {
+  const { quantityEndIndex } = parseQuantity(line);
+  const descriptionSource = quantityEndIndex >= 0 ? line.slice(quantityEndIndex) : line;
+  const cleaned = cleanDescription(descriptionSource);
+
+  if (!cleaned) {
     return line.trim();
   }
 
-  return withoutDecorators;
+  return cleaned;
+}
+
+function shouldSkipLine(line: string) {
+  return skipLinePattern.test(line);
 }
 
 function matchMaterial(line: string, materials: MaterialRecord[]) {
+  const normalizedLine = normalizeText(line);
+  if (!normalizedLine) {
+    return null;
+  }
+
+  const keywordRules: Array<{ trigger: string; materialKeywords: string[] }> = [
+    { trigger: 'marine', materialKeywords: ['marine', 'plywood'] },
+    { trigger: 'birch', materialKeywords: ['birch', 'plywood'] },
+    { trigger: 'white', materialKeywords: ['white', 'melamine'] }
+  ];
+
+  for (const rule of keywordRules) {
+    if (!normalizedLine.includes(rule.trigger)) {
+      continue;
+    }
+
+    const candidates = materials
+      .map((material) => {
+        const normalizedName = normalizeText(material.name);
+        const score = rule.materialKeywords.filter((token) => normalizedName.includes(token)).length;
+        return { material, score };
+      })
+      .filter((candidate) => candidate.score > 0)
+      .sort((a, b) => b.score - a.score);
+
+    if (candidates[0] && candidates[0].score >= 1) {
+      return candidates[0].material;
+    }
+
+    return null;
+  }
+
   const skuTokens = line.toUpperCase().match(/[A-Z0-9-]{3,}/g) ?? [];
 
   for (const token of skuTokens) {
@@ -88,11 +160,6 @@ function matchMaterial(line: string, materials: MaterialRecord[]) {
     if (skuMatch) {
       return skuMatch;
     }
-  }
-
-  const normalizedLine = normalizeText(line);
-  if (!normalizedLine) {
-    return null;
   }
 
   let bestMatch: MaterialRecord | null = null;
@@ -113,7 +180,7 @@ function matchMaterial(line: string, materials: MaterialRecord[]) {
     }
   }
 
-  return bestScore > 0 ? bestMatch : null;
+  return bestScore >= 2 ? bestMatch : null;
 }
 
 function parseInvoiceText(rawText: string, materials: MaterialRecord[]) {
@@ -122,12 +189,23 @@ function parseInvoiceText(rawText: string, materials: MaterialRecord[]) {
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
 
-  return lines.map((line, index) => {
-    const matchedMaterial = matchMaterial(line, materials);
-    const quantity = parseQuantity(line);
+  return lines.reduce<ParsedRow[]>((parsedRows, line) => {
+    if (shouldSkipLine(line)) {
+      return parsedRows;
+    }
 
-    return {
-      id: `row-${index}`,
+    const { quantity, quantityEndIndex } = parseQuantity(line);
+    if (!quantity) {
+      return parsedRows;
+    }
+
+    const descriptionSource = quantityEndIndex >= 0 ? line.slice(quantityEndIndex) : line;
+    const cleanedDescription = cleanDescription(descriptionSource);
+    const normalizedForMatch = cleanedDescription || line.replace(lineNumberPattern, '').trim();
+    const matchedMaterial = matchMaterial(normalizedForMatch, materials);
+
+    parsedRows.push({
+      id: `row-${parsedRows.length}`,
       originalLine: line,
       quantity,
       unit: parseUnit(line, matchedMaterial?.unit ?? 'UNIT'),
@@ -137,8 +215,10 @@ function parseInvoiceText(rawText: string, materials: MaterialRecord[]) {
       invoiceNumber: '',
       vendorName: '',
       confirmed: Boolean(matchedMaterial && quantity)
-    };
-  });
+    });
+
+    return parsedRows;
+  }, []);
 }
 
 export function InvoiceImportReceiveForm({ materials, jobs }: { materials: MaterialRecord[]; jobs: JobRecord[] }) {
