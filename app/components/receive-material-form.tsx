@@ -7,6 +7,7 @@ import { JobRecord, MaterialRecord, receiveMaterial } from '@/app/actions';
 type UploadResponse = {
   fileName: string;
   url: string;
+  extractedText?: string;
 };
 
 const maxSizeMb = 10;
@@ -17,6 +18,7 @@ export function ReceiveMaterialForm({ materials, jobs }: { materials: MaterialRe
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadedInvoice, setUploadedInvoice] = useState<UploadResponse | null>(null);
+  const [extractSuccessMessage, setExtractSuccessMessage] = useState<string | null>(null);
 
   const acceptValue = useMemo(() => '.pdf,.jpg,.jpeg,.png', []);
 
@@ -55,6 +57,16 @@ export function ReceiveMaterialForm({ materials, jobs }: { materials: MaterialRe
       }
 
       setUploadedInvoice({ fileName: payload.fileName, url: payload.url });
+      setExtractSuccessMessage(null);
+
+      if (payload.extractedText?.trim()) {
+        window.dispatchEvent(
+          new CustomEvent('invoice-text-extracted', {
+            detail: { text: payload.extractedText }
+          })
+        );
+        setExtractSuccessMessage('Text extracted successfully. Review and click Parse Invoice.');
+      }
     } catch (error) {
       setUploadError(error instanceof Error ? error.message : 'Upload failed.');
     } finally {
@@ -84,6 +96,7 @@ export function ReceiveMaterialForm({ materials, jobs }: { materials: MaterialRe
         </button>
 
         {uploadError ? <p style={{ color: '#b42318', marginTop: '0.5rem' }}>{uploadError}</p> : null}
+        {extractSuccessMessage ? <p style={{ color: '#027a48', marginTop: '0.5rem' }}>{extractSuccessMessage}</p> : null}
 
         {uploadedInvoice ? (
           <div style={{ marginTop: '0.5rem' }}>

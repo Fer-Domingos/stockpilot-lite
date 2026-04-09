@@ -50,7 +50,7 @@ export default async function ReceiveMaterialsPage({
         )}
       </section>
 
-      <section className="card">
+      <section className="card" id="import-from-invoice-text">
         <div className="section-title">
           <h3>Import from Invoice Text</h3>
           <p className="muted">Paste raw invoice text, review mapped lines, and confirm destination and quantity before posting.</p>

@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useMemo, useState, useTransition } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 
 import {
   JobRecord,
@@ -151,8 +151,29 @@ export function InvoiceImportReceiveForm({ materials, jobs }: { materials: Mater
   const [isCreatingMaterial, startCreateTransition] = useTransition();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const openJobs = useMemo(() => jobs.filter((job) => job.status === 'OPEN'), [jobs]);
+
+  useEffect(() => {
+    function handleExtractedText(event: Event) {
+      const customEvent = event as CustomEvent<{ text?: string }>;
+      const extractedText = customEvent.detail?.text?.trim() ?? '';
+      if (!extractedText) {
+        return;
+      }
+
+      setInvoiceText(extractedText);
+      const importSection = document.getElementById('import-from-invoice-text');
+      importSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      window.setTimeout(() => {
+        textareaRef.current?.focus();
+      }, 200);
+    }
+
+    window.addEventListener('invoice-text-extracted', handleExtractedText as EventListener);
+    return () => window.removeEventListener('invoice-text-extracted', handleExtractedText as EventListener);
+  }, []);
 
   function handleParse() {
     const parsedRows = parseInvoiceText(invoiceText, availableMaterials);
@@ -213,6 +234,7 @@ export function InvoiceImportReceiveForm({ materials, jobs }: { materials: Mater
       <label htmlFor="invoiceText">Paste Invoice Text</label>
       <textarea
         id="invoiceText"
+        ref={textareaRef}
         rows={8}
         value={invoiceText}
         onChange={(event) => setInvoiceText(event.target.value)}
