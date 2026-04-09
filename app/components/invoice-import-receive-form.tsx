@@ -33,23 +33,74 @@ type CreateMaterialDraft = {
 };
 
 const quantityPattern = /(?:^|\s)(\d+(?:\.\d+)?)(?:\s|$)/;
+const ignoredLinePattern = /\b(?:handling|tax|freight|delivery|subtotal|total)\b/i;
+const pricePattern = /\b\d{1,3}(?:,\d{3})*(?:\.\d{2})\b/g;
 
 function normalizeText(value: string) {
   return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
 function parseQuantity(line: string) {
-  const match = line.match(quantityPattern);
-  if (!match) {
+  const tokens = line.trim().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) {
     return '';
   }
 
-  const parsed = Number(match[1]);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return '';
+  const leadingNumber = Number(tokens[0]);
+  if (Number.isFinite(leadingNumber) && leadingNumber > 1) {
+    return String(Math.floor(leadingNumber));
   }
 
-  return String(Math.floor(parsed));
+  if (Number.isFinite(leadingNumber) && leadingNumber > 0 && leadingNumber <= 3) {
+    const fallbackToken = tokens.find((token, index) => {
+      if (index === 0) {
+        return false;
+      }
+      const value = Number(token);
+      return Number.isFinite(value) && value > 3;
+    });
+
+    if (!fallbackToken) {
+      return '';
+    }
+
+    return String(Math.floor(Number(fallbackToken)));
+  }
+
+  return '';
+}
+
+function parseDescription(line: string, quantity: string) {
+  const tokens = line.trim().split(/\s+/).filter(Boolean);
+  let startIndex = 0;
+
+  if (tokens.length > 0) {
+    const firstValue = Number(tokens[0]);
+    if (Number.isFinite(firstValue) && firstValue > 0 && firstValue <= 3) {
+      startIndex = 1;
+    }
+  }
+
+  if (quantity) {
+    const quantityValue = Number(quantity);
+    const qtyTokenIndex = tokens.findIndex((token, index) => {
+      if (index < startIndex) {
+        return false;
+      }
+      const value = Number(token);
+      return Number.isFinite(value) && Math.floor(value) === quantityValue;
+    });
+    if (qtyTokenIndex >= startIndex) {
+      startIndex = qtyTokenIndex + 1;
+    }
+  }
+
+  return tokens
+    .slice(startIndex)
+    .join(' ')
+    .replace(pricePattern, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function parseUnit(line: string, fallback: string) {
@@ -120,17 +171,20 @@ function parseInvoiceText(rawText: string, materials: MaterialRecord[]) {
   const lines = rawText
     .split(/\r?\n/)
     .map((line) => line.trim())
-    .filter((line) => line.length > 0);
+    .filter((line) => line.length > 0)
+    .filter((line) => !ignoredLinePattern.test(line));
 
   return lines.map((line, index) => {
-    const matchedMaterial = matchMaterial(line, materials);
     const quantity = parseQuantity(line);
+    const description = parseDescription(line, quantity);
+    const lineForMatching = description || line;
+    const matchedMaterial = matchMaterial(lineForMatching, materials);
 
     return {
       id: `row-${index}`,
-      originalLine: line,
+      originalLine: lineForMatching,
       quantity,
-      unit: parseUnit(line, matchedMaterial?.unit ?? 'UNIT'),
+      unit: parseUnit(lineForMatching, matchedMaterial?.unit ?? 'UNIT'),
       materialId: matchedMaterial?.id ?? null,
       destinationType: 'SHOP' as const,
       jobId: '',
