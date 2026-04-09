@@ -1,6 +1,5 @@
 import { AppShell } from '@/app/components/app-shell';
-import { InvoiceImportReceiveForm } from '@/app/components/invoice-import-receive-form';
-import { ReceiveMaterialForm } from '@/app/components/receive-material-form';
+import { ReceiveMaterialsForms } from '@/app/components/receive-materials-forms';
 import { listJobs, listMaterials, listPurchaseOrderAlerts, listReceivingRecords } from '@/app/actions';
 import { canManageInventory } from '@/lib/permissions';
 import { getRole } from '@/lib/role';
@@ -36,31 +35,9 @@ export default async function ReceiveMaterialsPage({
 
   return (
     <AppShell role={role}>
-      <section className="card">
-        <div className="section-title">
-          <h3>Receive Materials</h3>
-          <p className="muted">Capture vendor receipts with invoice, destination, and optional photo reference.</p>
-        </div>
-        {errorMessage ? <p style={{ color: '#b42318', marginBottom: '0.75rem' }}>{errorMessage}</p> : null}
-        {successMessage ? <p style={{ color: '#027a48', marginBottom: '0.75rem' }}>{successMessage}</p> : null}
-        {canPostReceipts ? (
-          <ReceiveMaterialForm materials={materials} jobs={openJobs} />
-        ) : (
-          <p className="muted">PM access is read-only. Receiving is available to ADMIN users only.</p>
-        )}
-      </section>
-
-      <section className="card">
-        <div className="section-title">
-          <h3>Import from Invoice Text</h3>
-          <p className="muted">Paste raw invoice text, review mapped lines, and confirm destination and quantity before posting.</p>
-        </div>
-        {canPostReceipts ? (
-          <InvoiceImportReceiveForm materials={materials} jobs={openJobs} />
-        ) : (
-          <p className="muted">PM access is read-only. Invoice import posting is available to ADMIN users only.</p>
-        )}
-      </section>
+      {errorMessage ? <p style={{ color: '#b42318', marginBottom: '0.75rem' }}>{errorMessage}</p> : null}
+      {successMessage ? <p style={{ color: '#027a48', marginBottom: '0.75rem' }}>{successMessage}</p> : null}
+      <ReceiveMaterialsForms materials={materials} jobs={openJobs} canPostReceipts={canPostReceipts} />
 
       <section className="card">
         <div className="section-title">

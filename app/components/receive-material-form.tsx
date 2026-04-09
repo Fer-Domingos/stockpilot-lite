@@ -11,8 +11,21 @@ type UploadResponse = {
 
 const maxSizeMb = 10;
 const acceptedTypes = ['application/pdf', 'image/jpeg', 'image/png'];
+const extractSuccessMessage = 'Text extracted successfully. Review and click Parse Invoice.';
+const extractErrorMessage =
+  'This PDF appears to be scanned (image-based). Please paste the invoice text manually or upload a text-based PDF.';
 
-export function ReceiveMaterialForm({ materials, jobs }: { materials: MaterialRecord[]; jobs: JobRecord[] }) {
+export function ReceiveMaterialForm({
+  materials,
+  jobs,
+  onInvoiceTextExtracted,
+  onInvoiceTextExtractionMessage
+}: {
+  materials: MaterialRecord[];
+  jobs: JobRecord[];
+  onInvoiceTextExtracted: (value: string) => void;
+  onInvoiceTextExtractionMessage: (value: string, type: 'success' | 'error') => void;
+}) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -55,6 +68,30 @@ export function ReceiveMaterialForm({ materials, jobs }: { materials: MaterialRe
       }
 
       setUploadedInvoice({ fileName: payload.fileName, url: payload.url });
+
+      if (selectedFile.type === 'application/pdf') {
+        try {
+          const extractFormData = new FormData();
+          extractFormData.append('file', selectedFile);
+
+          const extractResponse = await fetch('/api/invoices/extract-text', {
+            method: 'POST',
+            body: extractFormData
+          });
+
+          const extractPayload = (await extractResponse.json()) as { text?: string };
+          const extractedText = (extractPayload.text ?? '').trim();
+
+          if (extractResponse.ok && extractedText) {
+            onInvoiceTextExtracted(extractedText);
+            onInvoiceTextExtractionMessage(extractSuccessMessage, 'success');
+          } else {
+            onInvoiceTextExtractionMessage(extractErrorMessage, 'error');
+          }
+        } catch {
+          onInvoiceTextExtractionMessage(extractErrorMessage, 'error');
+        }
+      }
     } catch (error) {
       setUploadError(error instanceof Error ? error.message : 'Upload failed.');
     } finally {

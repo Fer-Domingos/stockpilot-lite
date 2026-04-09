@@ -141,8 +141,21 @@ function parseInvoiceText(rawText: string, materials: MaterialRecord[]) {
   });
 }
 
-export function InvoiceImportReceiveForm({ materials, jobs }: { materials: MaterialRecord[]; jobs: JobRecord[] }) {
-  const [invoiceText, setInvoiceText] = useState('');
+export function InvoiceImportReceiveForm({
+  materials,
+  jobs,
+  invoiceText,
+  setInvoiceText,
+  importMessage,
+  importMessageType
+}: {
+  materials: MaterialRecord[];
+  jobs: JobRecord[];
+  invoiceText: string;
+  setInvoiceText: (value: string) => void;
+  importMessage: string | null;
+  importMessageType: 'success' | 'error' | null;
+}) {
   const [rows, setRows] = useState<ParsedRow[]>([]);
   const [availableMaterials, setAvailableMaterials] = useState<MaterialRecord[]>(materials);
   const [activeCreateRowId, setActiveCreateRowId] = useState<string | null>(null);
@@ -218,6 +231,9 @@ export function InvoiceImportReceiveForm({ materials, jobs }: { materials: Mater
         onChange={(event) => setInvoiceText(event.target.value)}
         placeholder="Paste lines copied from an invoice here..."
       />
+      {importMessage ? (
+        <p style={{ color: importMessageType === 'error' ? '#b42318' : '#027a48', marginTop: '0.5rem' }}>{importMessage}</p>
+      ) : null}
 
       <div style={{ display: 'flex', gap: '0.5rem' }}>
         <button type="button" onClick={handleParse}>
