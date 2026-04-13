@@ -144,6 +144,7 @@ function parseInvoiceText(rawText: string, materials: MaterialRecord[]) {
 export function InvoiceImportReceiveForm({ materials, jobs }: { materials: MaterialRecord[]; jobs: JobRecord[] }) {
   const [invoiceText, setInvoiceText] = useState('');
   const [rows, setRows] = useState<ParsedRow[]>([]);
+  const [showScannedInvoiceHelper, setShowScannedInvoiceHelper] = useState(false);
   const [availableMaterials, setAvailableMaterials] = useState<MaterialRecord[]>(materials);
   const [activeCreateRowId, setActiveCreateRowId] = useState<string | null>(null);
   const [draft, setDraft] = useState<CreateMaterialDraft | null>(null);
@@ -155,8 +156,19 @@ export function InvoiceImportReceiveForm({ materials, jobs }: { materials: Mater
   const openJobs = useMemo(() => jobs.filter((job) => job.status === 'OPEN'), [jobs]);
 
   function handleParse() {
+    const normalizedInput = invoiceText.trim();
+    const normalizedLowerInput = normalizedInput.toLowerCase();
+
+    if (normalizedInput.length === 0 || normalizedLowerInput === 'no readable text found') {
+      setRows([]);
+      setShowScannedInvoiceHelper(true);
+      setError(null);
+      return;
+    }
+
     const parsedRows = parseInvoiceText(invoiceText, availableMaterials);
     setRows(parsedRows);
+    setShowScannedInvoiceHelper(false);
     setError(null);
   }
 
@@ -231,6 +243,34 @@ export function InvoiceImportReceiveForm({ materials, jobs }: { materials: Mater
       <input type="hidden" name="rowsPayload" />
 
       {error ? <p style={{ color: '#b42318', marginBottom: '0.75rem' }}>{error}</p> : null}
+      {showScannedInvoiceHelper ? (
+        <div
+          style={{
+            border: '1px solid #d0d5dd',
+            borderRadius: '6px',
+            padding: '0.75rem',
+            marginBottom: '0.75rem',
+            backgroundColor: '#f8f9fb'
+          }}
+        >
+          <p style={{ marginTop: 0, marginBottom: '0.5rem', color: '#344054' }}>
+            This invoice appears to be scanned (image-based). Automatic extraction is not available.
+          </p>
+          <h4 style={{ marginTop: 0, marginBottom: '0.5rem' }}>Quick Manual Entry</h4>
+          <p style={{ marginTop: 0, marginBottom: '0.5rem' }}>
+            Copy the item lines from your invoice and paste below in this format:
+            <br />
+            <code>QTY CODE DESCRIPTION</code>
+          </p>
+          <p className="muted" style={{ marginTop: 0, marginBottom: 0 }}>
+            Example:
+            <br />
+            <code>100 ABC123 PLYWOOD 3/4 4X8</code>
+            <br />
+            <code>50 XYZ789 MDF WHITE</code>
+          </p>
+        </div>
+      ) : null}
 
       {rows.length > 0 ? (
         <table>
