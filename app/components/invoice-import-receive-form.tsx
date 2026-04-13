@@ -33,12 +33,19 @@ type CreateMaterialDraft = {
 };
 
 const quantityPattern = /(?:^|\s)(\d+(?:\.\d+)?)(?:\s|$)/;
+const ignoredLinePattern = /\b(handling|tax|freight|subtotal|total|delivery)\b/i;
 
 function normalizeText(value: string) {
   return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
 function parseQuantity(line: string) {
+  const [firstToken = ''] = line.trim().split(/\s+/);
+  const leadingQuantity = Number(firstToken);
+  if (Number.isFinite(leadingQuantity) && leadingQuantity > 0) {
+    return String(Math.floor(leadingQuantity));
+  }
+
   const match = line.match(quantityPattern);
   if (!match) {
     return '';
@@ -81,7 +88,15 @@ function buildSuggestedMaterialName(line: string) {
 }
 
 function matchMaterial(line: string, materials: MaterialRecord[]) {
-  const skuTokens = line.toUpperCase().match(/[A-Z0-9-]{3,}/g) ?? [];
+  const tokens = line.split(/\s+/).filter(Boolean);
+  const skuCandidates = [
+    tokens[1] ?? '',
+    ...tokens
+  ]
+    .map((token) => token.toUpperCase().replace(/[^A-Z0-9-]/g, ''))
+    .filter((token) => token.length >= 3);
+
+  const skuTokens = Array.from(new Set(skuCandidates));
 
   for (const token of skuTokens) {
     const skuMatch = materials.find((material) => material.sku.toUpperCase() === token);
@@ -120,7 +135,8 @@ function parseInvoiceText(rawText: string, materials: MaterialRecord[]) {
   const lines = rawText
     .split(/\r?\n/)
     .map((line) => line.trim())
-    .filter((line) => line.length > 0);
+    .filter((line) => line.length > 0)
+    .filter((line) => !ignoredLinePattern.test(line));
 
   return lines.map((line, index) => {
     const matchedMaterial = matchMaterial(line, materials);
@@ -210,13 +226,18 @@ export function InvoiceImportReceiveForm({ materials, jobs }: { materials: Mater
         setIsSubmitting(true);
       }}
     >
-      <label htmlFor="invoiceText">Paste Invoice Text</label>
+      <label htmlFor="invoiceText">Paste Clean Invoice Lines</label>
+      <p className="muted" style={{ marginTop: '0.25rem' }}>
+        Paste one item per line in this format:
+        <br />
+        QTY CODE DESCRIPTION
+      </p>
       <textarea
         id="invoiceText"
         rows={8}
         value={invoiceText}
         onChange={(event) => setInvoiceText(event.target.value)}
-        placeholder="Paste lines copied from an invoice here..."
+        placeholder="100 MEL14WH2F 6MM 49X97 MAJESTIC WHITE W100 2S SUEDE MDF"
       />
 
       <div style={{ display: 'flex', gap: '0.5rem' }}>
