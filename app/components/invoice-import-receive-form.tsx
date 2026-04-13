@@ -32,14 +32,15 @@ type CreateMaterialDraft = {
   notes: string;
 };
 
-const quantityPattern = /(?:^|\s)(\d+(?:\.\d+)?)(?:\s|$)/;
+const ignoreLinePattern = /\b(?:handling|tax|freight|subtotal|total|delivery)\b/i;
+const leadingQuantityPattern = /^\s*(\d+(?:\.\d+)?)\b/;
 
 function normalizeText(value: string) {
   return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
 function parseQuantity(line: string) {
-  const match = line.match(quantityPattern);
+  const match = line.match(leadingQuantityPattern);
   if (!match) {
     return '';
   }
@@ -66,7 +67,7 @@ function parseUnit(line: string, fallback: string) {
 }
 
 function buildSuggestedMaterialName(line: string) {
-  const withoutQty = line.replace(quantityPattern, ' ');
+  const withoutQty = line.replace(leadingQuantityPattern, ' ');
   const withoutDecorators = withoutQty
     .replace(/\b(?:ea|each|unit|units|sheet|sheets|pcs|pc|x)\b/gi, ' ')
     .replace(/[()\[\],]/g, ' ')
@@ -81,7 +82,11 @@ function buildSuggestedMaterialName(line: string) {
 }
 
 function matchMaterial(line: string, materials: MaterialRecord[]) {
-  const skuTokens = line.toUpperCase().match(/[A-Z0-9-]{3,}/g) ?? [];
+  const tokens = line.trim().split(/\s+/).filter(Boolean);
+  const codeToken = (tokens[1] ?? '').replace(/^["']+|["']+$/g, '');
+  const skuTokensFromCode = codeToken ? [codeToken.toUpperCase()] : [];
+  const skuTokensFromLine = line.toUpperCase().match(/[A-Z0-9-]{3,}/g) ?? [];
+  const skuTokens = [...skuTokensFromCode, ...skuTokensFromLine];
 
   for (const token of skuTokens) {
     const skuMatch = materials.find((material) => material.sku.toUpperCase() === token);
@@ -120,7 +125,8 @@ function parseInvoiceText(rawText: string, materials: MaterialRecord[]) {
   const lines = rawText
     .split(/\r?\n/)
     .map((line) => line.trim())
-    .filter((line) => line.length > 0);
+    .filter((line) => line.length > 0)
+    .filter((line) => !ignoreLinePattern.test(line));
 
   return lines.map((line, index) => {
     const matchedMaterial = matchMaterial(line, materials);
@@ -210,13 +216,18 @@ export function InvoiceImportReceiveForm({ materials, jobs }: { materials: Mater
         setIsSubmitting(true);
       }}
     >
-      <label htmlFor="invoiceText">Paste Invoice Text</label>
+      <label htmlFor="invoiceText">Paste Clean Invoice Lines</label>
+      <p className="muted" style={{ marginTop: 0, marginBottom: '0.5rem' }}>
+        Paste one item per line in this format: QTY CODE DESCRIPTION
+      </p>
       <textarea
         id="invoiceText"
         rows={8}
         value={invoiceText}
         onChange={(event) => setInvoiceText(event.target.value)}
-        placeholder="Paste lines copied from an invoice here..."
+        placeholder={`100 MEL14WH2F 6MM 49X97 MAJESTIC WHITE W100 2S SUEDE MDF
+30 CFEXT1"A 1" 49X97 PCP ARMORITE EXT NAF FSC MIX CREDIT
+60 BIRD34R 3/4 4X8 ROYAL BIRCH`}
       />
 
       <div style={{ display: 'flex', gap: '0.5rem' }}>
