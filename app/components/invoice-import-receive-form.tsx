@@ -14,6 +14,8 @@ type DestinationType = 'SHOP' | 'JOB';
 type ParsedRow = {
   id: string;
   originalLine: string;
+  productCode: string;
+  cleanDescription: string;
   quantity: string;
   unit: string;
   materialId: string | null;
@@ -22,6 +24,18 @@ type ParsedRow = {
   invoiceNumber: string;
   vendorName: string;
   confirmed: boolean;
+};
+
+type IgnoredInvoiceLine = {
+  id: string;
+  originalLine: string;
+  productCode: string;
+  reason: string;
+};
+
+type ParsedInvoiceText = {
+  rows: ParsedRow[];
+  ignoredLines: IgnoredInvoiceLine[];
 };
 
 type CreateMaterialDraft = {
@@ -33,6 +47,14 @@ type CreateMaterialDraft = {
 };
 
 const quantityPattern = /(?:^|\s)(\d+(?:\.\d+)?)(?:\s|$)/;
+const stockIgnorePatterns = [
+  /\bhandling charge\b/i,
+  /\btax\b/i,
+  /\bfreight\b/i,
+  /\bdelivery\b/i,
+  /\bsubtotal\b/i,
+  /\btotal\b/i
+];
 
 function normalizeText(value: string) {
   return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
@@ -63,6 +85,43 @@ function parseUnit(line: string, fallback: string) {
     return 'UNIT';
   }
   return fallback;
+}
+
+function extractProductCode(line: string) {
+  const tokens = line.trim().split(/\s+/);
+  if (tokens.length < 2) {
+    return '';
+  }
+
+  const quantityToken = tokens[0];
+  if (!/^\d+(?:\.\d+)?$/.test(quantityToken)) {
+    return '';
+  }
+
+  const candidate = tokens[1] ?? '';
+  if (!/[A-Za-z]/.test(candidate) || candidate.length < 3) {
+    return '';
+  }
+
+  return candidate.replace(/^[^A-Za-z0-9"]+|[^A-Za-z0-9"]+$/g, '');
+}
+
+function buildCleanDescription(line: string, quantity: string, productCode: string) {
+  let cleaned = line.trim();
+
+  if (quantity) {
+    cleaned = cleaned.replace(new RegExp(`^${quantity}\\s+`), '');
+  }
+
+  if (productCode) {
+    cleaned = cleaned.replace(new RegExp(`^${productCode.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*`), '');
+  }
+
+  return cleaned.replace(/\s+/g, ' ').trim();
+}
+
+function shouldIgnoreLine(line: string) {
+  return stockIgnorePatterns.some((pattern) => pattern.test(line));
 }
 
 function buildSuggestedMaterialName(line: string) {
@@ -116,19 +175,37 @@ function matchMaterial(line: string, materials: MaterialRecord[]) {
   return bestScore > 0 ? bestMatch : null;
 }
 
-function parseInvoiceText(rawText: string, materials: MaterialRecord[]) {
+function parseInvoiceText(rawText: string, materials: MaterialRecord[]): ParsedInvoiceText {
   const lines = rawText
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
 
-  return lines.map((line, index) => {
-    const matchedMaterial = matchMaterial(line, materials);
-    const quantity = parseQuantity(line);
+  const rows: ParsedRow[] = [];
+  const ignoredLines: IgnoredInvoiceLine[] = [];
 
-    return {
+  lines.forEach((line, index) => {
+    const quantity = parseQuantity(line);
+    const productCode = extractProductCode(line);
+    const cleanDescription = buildCleanDescription(line, quantity, productCode);
+
+    if (shouldIgnoreLine(line)) {
+      ignoredLines.push({
+        id: `ignored-${index}`,
+        originalLine: line,
+        productCode: productCode || 'N/A',
+        reason: cleanDescription || line
+      });
+      return;
+    }
+
+    const matchedMaterial = matchMaterial(line, materials);
+
+    rows.push({
       id: `row-${index}`,
       originalLine: line,
+      productCode,
+      cleanDescription,
       quantity,
       unit: parseUnit(line, matchedMaterial?.unit ?? 'UNIT'),
       materialId: matchedMaterial?.id ?? null,
@@ -137,13 +214,16 @@ function parseInvoiceText(rawText: string, materials: MaterialRecord[]) {
       invoiceNumber: '',
       vendorName: '',
       confirmed: Boolean(matchedMaterial && quantity)
-    };
+    });
   });
+
+  return { rows, ignoredLines };
 }
 
 export function InvoiceImportReceiveForm({ materials, jobs }: { materials: MaterialRecord[]; jobs: JobRecord[] }) {
   const [invoiceText, setInvoiceText] = useState('');
   const [rows, setRows] = useState<ParsedRow[]>([]);
+  const [ignoredLines, setIgnoredLines] = useState<IgnoredInvoiceLine[]>([]);
   const [availableMaterials, setAvailableMaterials] = useState<MaterialRecord[]>(materials);
   const [activeCreateRowId, setActiveCreateRowId] = useState<string | null>(null);
   const [draft, setDraft] = useState<CreateMaterialDraft | null>(null);
@@ -155,8 +235,9 @@ export function InvoiceImportReceiveForm({ materials, jobs }: { materials: Mater
   const openJobs = useMemo(() => jobs.filter((job) => job.status === 'OPEN'), [jobs]);
 
   function handleParse() {
-    const parsedRows = parseInvoiceText(invoiceText, availableMaterials);
-    setRows(parsedRows);
+    const parsed = parseInvoiceText(invoiceText, availableMaterials);
+    setRows(parsed.rows);
+    setIgnoredLines(parsed.ignoredLines);
     setError(null);
   }
 
@@ -221,7 +302,7 @@ export function InvoiceImportReceiveForm({ materials, jobs }: { materials: Mater
 
       <div style={{ display: 'flex', gap: '0.5rem' }}>
         <button type="button" onClick={handleParse}>
-          Parse Invoice
+          Generate Clean Receive Lines
         </button>
         <button type="submit" disabled={isSubmitting}>
           {isSubmitting ? 'Posting...' : `Post ${confirmedRows.length} Confirmed Row(s)`}
@@ -231,6 +312,27 @@ export function InvoiceImportReceiveForm({ materials, jobs }: { materials: Mater
       <input type="hidden" name="rowsPayload" />
 
       {error ? <p style={{ color: '#b42318', marginBottom: '0.75rem' }}>{error}</p> : null}
+
+      {rows.length > 0 ? (
+        <div style={{ border: '1px solid #d0d5dd', borderRadius: '6px', padding: '0.75rem', marginBottom: '1rem' }}>
+          <h4 style={{ marginTop: 0 }}>Clean Receive Lines</h4>
+          <p className="muted">Review these normalized rows before confirming and posting to inventory.</p>
+          <pre style={{ marginBottom: 0, whiteSpace: 'pre-wrap' }}>
+            {rows
+              .map((row) => `${row.quantity || '?'} | ${row.productCode || 'N/A'} | ${row.cleanDescription || row.originalLine}`)
+              .join('\n')}
+          </pre>
+        </div>
+      ) : null}
+
+      {ignoredLines.length > 0 ? (
+        <div style={{ border: '1px solid #fecdca', background: '#fff6ed', borderRadius: '6px', padding: '0.75rem', marginBottom: '1rem' }}>
+          <h4 style={{ marginTop: 0 }}>Ignored Non-Stock Lines</h4>
+          <pre style={{ marginBottom: 0, whiteSpace: 'pre-wrap' }}>
+            {ignoredLines.map((line) => `IGNORE | ${line.productCode} | ${line.reason}`).join('\n')}
+          </pre>
+        </div>
+      ) : null}
 
       {rows.length > 0 ? (
         <table>
