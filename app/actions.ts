@@ -217,6 +217,34 @@ type ActionResult<T = undefined> = {
 };
 
 type MaterialPayload = Omit<MaterialRecord, "id" | "quantity">;
+export type MaterialImportRowInput = {
+  rowNumber: number;
+  name: string;
+  sku: string;
+  unit: string;
+  minimumStock: string;
+  notes: string;
+};
+export type MaterialImportAction = "CREATE" | "UPDATE" | "ERROR";
+export type MaterialImportPreviewRow = {
+  rowNumber: number;
+  name: string;
+  sku: string;
+  unit: string;
+  minimumStock: number | null;
+  notes: string;
+  action: MaterialImportAction;
+  existingMaterialSku: string | null;
+  errors: string[];
+};
+export type MaterialImportPreview = {
+  rows: MaterialImportPreviewRow[];
+  summary: {
+    readyToImport: number;
+    toUpdate: number;
+    withErrors: number;
+  };
+};
 type JobPayload = Omit<JobRecord, "id">;
 type BulkCreateJobsResult = {
   createdJobs: JobRecord[];
@@ -426,6 +454,194 @@ function normalizeMaterialPayload(payload: MaterialPayload): MaterialPayload {
 
 function normalizeMaterialNameForComparison(value: string): string {
   return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function normalizeSkuForComparison(value: string): string {
+  return value.trim().toUpperCase();
+}
+
+function buildBulkImportSkuBase(name: string): string {
+  const base = name
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 12);
+
+  return base || "MAT";
+}
+
+function allocateBulkImportSku(
+  providedSku: string,
+  name: string,
+  rowNumber: number,
+  usedSkus: Set<string>,
+): string {
+  const normalizedProvided = providedSku.trim();
+  if (normalizedProvided) {
+    return normalizedProvided;
+  }
+
+  const base = `BULK-${buildBulkImportSkuBase(name)}`;
+  let candidate = `${base}-${rowNumber}`;
+  let suffix = 1;
+
+  while (usedSkus.has(normalizeSkuForComparison(candidate))) {
+    candidate = `${base}-${rowNumber}-${suffix}`;
+    suffix += 1;
+  }
+
+  return candidate;
+}
+
+function parseImportMinStock(value: string): { value: number | null; error: string | null } {
+  const raw = value.trim();
+  if (!raw) {
+    return { value: null, error: null };
+  }
+
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return {
+      value: null,
+      error: "Minimum stock must be a non-negative number.",
+    };
+  }
+
+  return { value: Math.floor(parsed), error: null };
+}
+
+type MaterialImportPlanRow = MaterialImportPreviewRow & {
+  existingMaterialId: string | null;
+};
+
+async function buildMaterialImportPlan(
+  rows: MaterialImportRowInput[],
+  allowUpdatesBySku: boolean,
+): Promise<MaterialImportPlanRow[]> {
+  const existingMaterials = await prisma.material.findMany({
+    select: {
+      id: true,
+      sku: true,
+      name: true,
+    },
+  });
+
+  const existingBySku = new Map(
+    existingMaterials.map((material) => [
+      normalizeSkuForComparison(material.sku),
+      material,
+    ]),
+  );
+  const existingByName = new Map(
+    existingMaterials.map((material) => [
+      normalizeMaterialNameForComparison(material.name),
+      material,
+    ]),
+  );
+
+  const skuCounts = new Map<string, number>();
+  const nameCounts = new Map<string, number>();
+
+  for (const row of rows) {
+    const normalizedSku = normalizeSkuForComparison(row.sku);
+    const normalizedName = normalizeMaterialNameForComparison(row.name);
+
+    if (normalizedSku) {
+      skuCounts.set(normalizedSku, (skuCounts.get(normalizedSku) ?? 0) + 1);
+    }
+
+    if (normalizedName) {
+      nameCounts.set(normalizedName, (nameCounts.get(normalizedName) ?? 0) + 1);
+    }
+  }
+
+  const usedSkus = new Set(existingMaterials.map((material) => normalizeSkuForComparison(material.sku)));
+  const plannedRows: MaterialImportPlanRow[] = [];
+
+  for (const row of rows) {
+    const name = row.name.trim();
+    const sku = row.sku.trim();
+    const unit = normalizeMaterialUnit(row.unit);
+    const notes = row.notes.trim();
+    const normalizedName = normalizeMaterialNameForComparison(name);
+    const normalizedSku = normalizeSkuForComparison(sku);
+    const minStockResult = parseImportMinStock(row.minimumStock);
+
+    const errors: string[] = [];
+
+    if (!name) {
+      errors.push("Material name is required.");
+    }
+
+    if (!unit.trim()) {
+      errors.push("Unit is required.");
+    } else if (
+      !materialUnits.includes(unit as (typeof materialUnits)[number])
+    ) {
+      errors.push("Unit must be either UNIT or SHEETS.");
+    }
+
+    if (minStockResult.error) {
+      errors.push(minStockResult.error);
+    }
+
+    if (normalizedSku && (skuCounts.get(normalizedSku) ?? 0) > 1) {
+      errors.push("Duplicate SKU found in import file.");
+    }
+
+    if (normalizedName && (nameCounts.get(normalizedName) ?? 0) > 1) {
+      errors.push("Duplicate material name found in import file.");
+    }
+
+    const existingSkuMatch = normalizedSku ? existingBySku.get(normalizedSku) ?? null : null;
+    const existingNameMatch = normalizedName ? existingByName.get(normalizedName) ?? null : null;
+
+    let action: MaterialImportAction = "CREATE";
+    let existingMaterialId: string | null = null;
+
+    if (existingSkuMatch) {
+      if (!allowUpdatesBySku) {
+        errors.push(`SKU "${sku}" already exists.`);
+        action = "ERROR";
+      } else {
+        action = "UPDATE";
+        existingMaterialId = existingSkuMatch.id;
+      }
+    }
+
+    if (!existingSkuMatch && existingNameMatch) {
+      errors.push(`Material name "${name}" already exists.`);
+      action = "ERROR";
+    }
+
+    if (existingSkuMatch && existingNameMatch && existingNameMatch.id !== existingSkuMatch.id) {
+      errors.push(`Material name "${name}" already belongs to SKU "${existingNameMatch.sku}".`);
+      action = "ERROR";
+    }
+
+    const displaySku = allocateBulkImportSku(sku, name, row.rowNumber, usedSkus);
+    usedSkus.add(normalizeSkuForComparison(displaySku));
+
+    if (errors.length > 0) {
+      action = "ERROR";
+    }
+
+    plannedRows.push({
+      rowNumber: row.rowNumber,
+      name,
+      sku: displaySku,
+      unit,
+      minimumStock: minStockResult.value,
+      notes,
+      action,
+      existingMaterialSku: existingSkuMatch?.sku ?? null,
+      existingMaterialId,
+      errors,
+    });
+  }
+
+  return plannedRows;
 }
 
 async function findExistingMaterialByName(name: string) {
@@ -814,6 +1030,124 @@ export async function createMaterial(
     };
   } catch (error) {
     console.error("Failed to create material:", error);
+    return { ok: false, error: formatMaterialMutationError(error) };
+  }
+}
+
+export async function previewMaterialsImport(
+  rows: MaterialImportRowInput[],
+  allowUpdatesBySku: boolean,
+): Promise<ActionResult<MaterialImportPreview>> {
+  try {
+    await requireRole("ADMIN");
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Unauthorized.",
+    };
+  }
+
+  const importRows = rows.slice(0, 500);
+  if (importRows.length === 0) {
+    return { ok: false, error: "No rows were provided for import." };
+  }
+
+  const plannedRows = await buildMaterialImportPlan(importRows, allowUpdatesBySku);
+  const withErrors = plannedRows.filter((row) => row.action === "ERROR").length;
+  const toUpdate = plannedRows.filter((row) => row.action === "UPDATE").length;
+  const readyToImport = plannedRows.filter((row) => row.action === "CREATE").length;
+
+  return {
+    ok: true,
+    data: {
+      rows: plannedRows.map((row) => ({
+        rowNumber: row.rowNumber,
+        name: row.name,
+        sku: row.sku,
+        unit: row.unit,
+        minimumStock: row.minimumStock,
+        notes: row.notes,
+        action: row.action,
+        existingMaterialSku: row.existingMaterialSku,
+        errors: row.errors,
+      })),
+      summary: { readyToImport, toUpdate, withErrors },
+    },
+  };
+}
+
+export async function importMaterials(
+  rows: MaterialImportRowInput[],
+  allowUpdatesBySku: boolean,
+): Promise<ActionResult<{ createdCount: number; updatedCount: number }>> {
+  try {
+    await requireRole("ADMIN");
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Unauthorized.",
+    };
+  }
+
+  const importRows = rows.slice(0, 500);
+  if (importRows.length === 0) {
+    return { ok: false, error: "No rows were provided for import." };
+  }
+
+  const plannedRows = await buildMaterialImportPlan(importRows, allowUpdatesBySku);
+  const errorRows = plannedRows.filter((row) => row.action === "ERROR");
+  if (errorRows.length > 0) {
+    return {
+      ok: false,
+      error: "Resolve row errors in preview before importing.",
+    };
+  }
+
+  const createRows = plannedRows.filter((row) => row.action === "CREATE");
+  const updateRows = plannedRows.filter((row) => row.action === "UPDATE");
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      for (const row of createRows) {
+        await tx.material.create({
+          data: {
+            name: row.name,
+            sku: row.sku,
+            unit: row.unit,
+            minStock: row.minimumStock,
+            notes: row.notes,
+          },
+        });
+      }
+
+      for (const row of updateRows) {
+        if (!row.existingMaterialId) {
+          continue;
+        }
+
+        await tx.material.update({
+          where: { id: row.existingMaterialId },
+          data: {
+            name: row.name,
+            unit: row.unit,
+            minStock: row.minimumStock,
+            notes: row.notes,
+          },
+        });
+      }
+    });
+
+    revalidatePath("/materials");
+
+    return {
+      ok: true,
+      data: {
+        createdCount: createRows.length,
+        updatedCount: updateRows.length,
+      },
+    };
+  } catch (error) {
+    console.error("Failed to import materials:", error);
     return { ok: false, error: formatMaterialMutationError(error) };
   }
 }
