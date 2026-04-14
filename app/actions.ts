@@ -27,6 +27,7 @@ export type MaterialRecord = {
   quantity: number;
   minStock: number | null;
   notes: string;
+  isActive: boolean;
 };
 
 export type JobStatus = "OPEN" | "CLOSED";
@@ -216,7 +217,7 @@ type ActionResult<T = undefined> = {
   data?: T;
 };
 
-type MaterialPayload = Omit<MaterialRecord, "id" | "quantity">;
+type MaterialPayload = Omit<MaterialRecord, "id" | "quantity" | "isActive">;
 type JobPayload = Omit<JobRecord, "id">;
 type BulkCreateJobsResult = {
   createdJobs: JobRecord[];
@@ -248,6 +249,24 @@ type ReportsFilterInput = {
 
 const statuses: JobStatus[] = ["OPEN", "CLOSED"];
 const materialUnits = ["UNIT", "SHEETS"] as const;
+const inactiveMaterialTag = "[INACTIVE]";
+
+function isMaterialInactive(notes: string | null | undefined): boolean {
+  return String(notes ?? "").toUpperCase().includes(inactiveMaterialTag);
+}
+
+function inactivateMaterialNotes(notes: string | null | undefined): string {
+  const trimmed = String(notes ?? "").trim();
+  if (isMaterialInactive(trimmed)) {
+    return trimmed;
+  }
+
+  if (!trimmed) {
+    return inactiveMaterialTag;
+  }
+
+  return `${inactiveMaterialTag} ${trimmed}`;
+}
 
 async function getCurrentSession() {
   const sessionToken = cookies().get(authConfig.sessionCookieName)?.value;
@@ -759,6 +778,7 @@ export async function listMaterials(): Promise<{ data: MaterialRecord[] }> {
         quantity: quantityByMaterialId.get(material.id) ?? material.quantity,
         minStock: material.minStock,
         notes: material.notes,
+        isActive: !isMaterialInactive(material.notes),
       })),
     };
   } catch (error) {
@@ -810,6 +830,7 @@ export async function createMaterial(
         quantity: created.quantity,
         minStock: created.minStock,
         notes: created.notes,
+        isActive: !isMaterialInactive(created.notes),
       },
     };
   } catch (error) {
@@ -915,6 +936,7 @@ export async function createMaterialFromInvoiceImport(
         quantity: created.quantity,
         minStock: created.minStock,
         notes: created.notes,
+        isActive: !isMaterialInactive(created.notes),
       },
     };
   } catch (error) {
@@ -987,6 +1009,7 @@ export async function updateMaterial(
         quantity,
         minStock: updated.minStock,
         notes: updated.notes,
+        isActive: !isMaterialInactive(updated.notes),
       },
     };
   } catch (error) {
@@ -998,12 +1021,25 @@ export async function updateMaterial(
 export async function deleteMaterial(id: string): Promise<ActionResult> {
   try {
     await requireRole("ADMIN");
-    await prisma.material.delete({ where: { id } });
+    const existing = await prisma.material.findUnique({
+      where: { id },
+      select: { notes: true },
+    });
+
+    if (!existing) {
+      return { ok: false, error: "Material was not found." };
+    }
+
+    await prisma.material.update({
+      where: { id },
+      data: { notes: inactivateMaterialNotes(existing.notes) },
+    });
     revalidatePath("/materials");
+    revalidatePath("/receive-materials");
     return { ok: true };
   } catch (error) {
-    console.error("Failed to delete material:", error);
-    return { ok: false, error: "Unable to delete material right now." };
+    console.error("Failed to inactivate material:", error);
+    return { ok: false, error: "Unable to inactivate material right now." };
   }
 }
 
@@ -1524,7 +1560,7 @@ export async function listPurchaseOrderAlerts(
 
 export async function receiveMaterial(formData: FormData) {
   try {
-    await requireRole("ADMIN");
+    await requireRole("ADMIN", "PM");
   } catch (error) {
     redirect(
       `/receive-materials?error=save-failed&message=${encodeURIComponent(error instanceof Error ? error.message : "Unauthorized.")}`,
@@ -1814,6 +1850,189 @@ export async function receiveMaterial(formData: FormData) {
   redirect("/receive-materials?success=1");
 }
 
+type ManualReceiptLineInput = {
+  materialId: string;
+  quantity: string;
+  destinationType: "SHOP" | "JOB";
+  jobId: string;
+};
+
+function normalizeManualReceiptLines(linesPayload: string): ManualReceiptLineInput[] {
+  try {
+    const parsedLines = JSON.parse(linesPayload) as unknown;
+
+    if (!Array.isArray(parsedLines)) {
+      return [];
+    }
+
+    return parsedLines
+      .map((line) => {
+        if (!line || typeof line !== "object") {
+          return null;
+        }
+
+        const entry = line as Record<string, unknown>;
+
+        return {
+          materialId: String(entry.materialId ?? "").trim(),
+          quantity: String(entry.quantity ?? "").trim(),
+          destinationType: entry.destinationType === "JOB" ? "JOB" : "SHOP",
+          jobId: String(entry.jobId ?? "").trim(),
+        } satisfies ManualReceiptLineInput;
+      })
+      .filter((line): line is ManualReceiptLineInput => Boolean(line));
+  } catch {
+    return [];
+  }
+}
+
+export async function receiveMaterialsManual(formData: FormData) {
+  try {
+    await requireRole("ADMIN", "PM");
+  } catch (error) {
+    redirect(
+      `/receive-materials?error=save-failed&message=${encodeURIComponent(error instanceof Error ? error.message : "Unauthorized.")}`,
+    );
+  }
+
+  const vendor = String(formData.get("vendorName") ?? "").trim();
+  const invoiceNumber = String(formData.get("invoiceNumber") ?? "").trim();
+  const notes = String(formData.get("notes") ?? "").trim();
+  const linesPayload = String(formData.get("linesPayload") ?? "");
+  const normalizedLines = normalizeManualReceiptLines(linesPayload);
+
+  if (!vendor || !invoiceNumber || normalizedLines.length === 0) {
+    redirect("/receive-materials?error=missing-required-fields");
+  }
+
+  const materialIds = Array.from(
+    new Set(normalizedLines.map((line) => line.materialId).filter(Boolean)),
+  );
+  const materials = await prisma.material.findMany({
+    where: { id: { in: materialIds } },
+    select: { id: true, notes: true },
+  });
+  const activeMaterialIds = new Set(
+    materials
+      .filter((material) => !isMaterialInactive(material.notes))
+      .map((material) => material.id),
+  );
+
+  const openJobs = await prisma.job.findMany({
+    where: { status: "OPEN" },
+    select: { id: true },
+  });
+  const openJobIds = new Set(openJobs.map((job) => job.id));
+
+  const validLines = normalizedLines
+    .map((line) => {
+      const quantity = Math.floor(Number(line.quantity));
+      const destinationType = line.destinationType;
+      const jobId = destinationType === "JOB" ? line.jobId : null;
+      const hasValidJob =
+        destinationType === "SHOP" || (jobId ? openJobIds.has(jobId) : false);
+
+      if (
+        !activeMaterialIds.has(line.materialId) ||
+        !Number.isFinite(quantity) ||
+        quantity <= 0 ||
+        !hasValidJob
+      ) {
+        return null;
+      }
+
+      return {
+        materialId: line.materialId,
+        quantity,
+        destinationType,
+        jobId,
+      };
+    })
+    .filter(
+      (
+        line,
+      ): line is {
+        materialId: string;
+        quantity: number;
+        destinationType: "SHOP" | "JOB";
+        jobId: string | null;
+      } => Boolean(line),
+    );
+
+  if (validLines.length === 0) {
+    redirect(
+      "/receive-materials?error=save-failed&message=No%20valid%20receipt%20lines%20to%20post.",
+    );
+  }
+
+  const receivedAt = new Date();
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      for (const line of validLines) {
+        const normalizedToLocation = normalizeTransactionLocation(
+          "locationToType",
+          {
+            locationType: line.destinationType,
+            jobId: line.jobId,
+          },
+        );
+
+        const receipt = await tx.receivingRecord.create({
+          data: {
+            materialId: line.materialId,
+            quantity: line.quantity,
+            destinationType: line.destinationType,
+            jobId: line.jobId,
+            invoiceNumber,
+            vendor,
+            notes: notes || null,
+            photoUrl: null,
+            invoiceFileUrl: null,
+            receivedAt,
+          },
+        });
+
+        await adjustInventoryBalance(
+          tx,
+          line.materialId,
+          line.destinationType,
+          line.jobId,
+          line.quantity,
+        );
+
+        await tx.inventoryTransaction.create({
+          data: {
+            materialId: line.materialId,
+            transactionType: "RECEIVE",
+            quantity: line.quantity,
+            locationFromType: null,
+            locationFromJobId: null,
+            locationToType: normalizedToLocation.locationType,
+            locationToJobId: normalizedToLocation.jobId,
+            invoiceNumber: invoiceNumber || null,
+            vendor: vendor || null,
+            notes: notes || null,
+            photoUrl: null,
+            receivingRecordId: receipt.id,
+            createdAt: receivedAt,
+          },
+        });
+      }
+    });
+
+    await syncMaterialQuantitiesFromBalances();
+  } catch (error) {
+    console.error("Failed to post manual receipt:", error);
+    redirect("/receive-materials?error=save-failed");
+  }
+
+  await revalidateInventoryViews();
+  revalidatePath("/po-alerts");
+  revalidatePath("/alerts");
+  redirect("/receive-materials?success=1&message=Receipt%20posted%20successfully.");
+}
+
 type InvoiceImportRowInput = {
   originalLine: string;
   materialId: string | null;
@@ -1860,7 +2079,7 @@ function normalizeInvoiceImportRows(rowsPayload: string): InvoiceImportRowInput[
 
 export async function receiveMaterialsFromInvoice(formData: FormData) {
   try {
-    await requireRole("ADMIN");
+    await requireRole("ADMIN", "PM");
   } catch (error) {
     redirect(
       `/receive-materials?error=save-failed&message=${encodeURIComponent(error instanceof Error ? error.message : "Unauthorized.")}`,

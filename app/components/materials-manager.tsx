@@ -36,7 +36,21 @@ export function MaterialsManager({
   const [form, setForm] = useState<MaterialFormState>(emptyForm);
   const [error, setError] = useState<string>('');
   const [isPending, startTransition] = useTransition();
+  const [searchTerm, setSearchTerm] = useState('');
   const isReadOnly = !canManageInventory(role);
+  const normalizedSearch = searchTerm.trim().toLowerCase();
+  const filteredMaterials = useMemo(
+    () =>
+      materials.filter((material) => {
+        if (!normalizedSearch) {
+          return true;
+        }
+
+        const haystack = `${material.name} ${material.sku} ${material.unit}`.toLowerCase();
+        return haystack.includes(normalizedSearch);
+      }),
+    [materials, normalizedSearch]
+  );
 
   const submitLabel = useMemo(() => {
     if (isPending) {
@@ -186,14 +200,21 @@ export function MaterialsManager({
 
       <section className="card">
         <div className="section-title">
-          <h3>Materials Master</h3>
+          <h3>Official Materials List</h3>
           {!isReadOnly ? (
             <button type="button" className="secondary-button" onClick={resetForm}>
               Add Material
             </button>
           ) : null}
         </div>
-        {isReadOnly ? <p className="muted">PM access is read-only. Material management actions are hidden.</p> : null}
+        {isReadOnly ? <p className="muted">Non-admin access is view/search only. Material management actions are hidden.</p> : null}
+        <label htmlFor="materialSearch">Search Materials</label>
+        <input
+          id="materialSearch"
+          value={searchTerm}
+          onChange={(event) => setSearchTerm(event.target.value)}
+          placeholder="Search by material name, SKU, or unit..."
+        />
         <div className="table-scroll">
           <table>
             <thead>
@@ -201,17 +222,19 @@ export function MaterialsManager({
                 <th>Material Name</th>
                 <th>SKU</th>
                 <th>Unit</th>
+                <th>Status</th>
                 <th>Minimum Stock</th>
                 <th>Notes</th>
                 {!isReadOnly ? <th>Actions</th> : null}
               </tr>
             </thead>
             <tbody>
-              {materials.map((material) => (
+              {filteredMaterials.map((material) => (
                 <tr key={material.id}>
                   <td>{material.name}</td>
                   <td>{material.sku}</td>
                   <td>{material.unit}</td>
+                  <td>{material.isActive ? 'Active' : 'Inactive'}</td>
                   <td>{material.minStock ?? '—'}</td>
                   <td>{material.notes || '—'}</td>
                   {!isReadOnly ? (
@@ -236,7 +259,7 @@ export function MaterialsManager({
                         <button
                           className="danger-button"
                           type="button"
-                          disabled={isPending}
+                          disabled={isPending || !material.isActive}
                           onClick={() => {
                             setError('');
 
@@ -248,17 +271,28 @@ export function MaterialsManager({
                                 return;
                               }
 
-                              setMaterials((current) => current.filter((entry) => entry.id !== material.id));
+                              setMaterials((current) =>
+                                current.map((entry) =>
+                                  entry.id === material.id
+                                    ? { ...entry, isActive: false, notes: entry.notes.toUpperCase().includes('[INACTIVE]') ? entry.notes : `[INACTIVE] ${entry.notes}`.trim() }
+                                    : entry
+                                )
+                              );
                             });
                           }}
                         >
-                          Delete
+                          Inactivate
                         </button>
                       </div>
                     </td>
                   ) : null}
                 </tr>
               ))}
+              {filteredMaterials.length === 0 ? (
+                <tr>
+                  <td colSpan={isReadOnly ? 6 : 7}>No materials match your search.</td>
+                </tr>
+              ) : null}
             </tbody>
           </table>
         </div>
