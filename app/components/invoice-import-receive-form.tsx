@@ -33,6 +33,8 @@ type CreateMaterialDraft = {
 };
 
 const quantityPattern = /(?:^|\s)(\d+(?:\.\d+)?)(?:\s|$)/;
+const leadingQuantityPattern = /^\s*(\d+(?:\.\d+)?)(?:\s+|$)(.*)$/;
+const ignoredLineKeywords = ['handling', 'tax', 'freight', 'delivery', 'subtotal', 'total'];
 
 function normalizeText(value: string) {
   return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
@@ -50,6 +52,41 @@ function parseQuantity(line: string) {
   }
 
   return String(Math.floor(parsed));
+}
+
+function parseLeadingQuantity(line: string) {
+  const match = line.match(leadingQuantityPattern);
+  if (!match) {
+    return { quantity: '', remainingLine: line.trim() };
+  }
+
+  const parsed = Number(match[1]);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return { quantity: '', remainingLine: line.trim() };
+  }
+
+  return { quantity: String(Math.floor(parsed)), remainingLine: match[2].trim() };
+}
+
+function isIgnoredInvoiceLine(line: string) {
+  const normalized = normalizeText(line);
+  if (!normalized) {
+    return true;
+  }
+
+  const tokens = normalized.split(' ');
+  return ignoredLineKeywords.some((keyword) => tokens.includes(keyword));
+}
+
+function normalizeSkuToken(value: string) {
+  return value.replace(/^[^a-z0-9]+|[^a-z0-9]+$/gi, '').toUpperCase();
+}
+
+function extractSkuTokens(line: string) {
+  return line
+    .split(/\s+/)
+    .map((token) => normalizeSkuToken(token))
+    .filter((token) => token.length >= 3);
 }
 
 function parseUnit(line: string, fallback: string) {
@@ -81,10 +118,15 @@ function buildSuggestedMaterialName(line: string) {
 }
 
 function matchMaterial(line: string, materials: MaterialRecord[]) {
-  const skuTokens = line.toUpperCase().match(/[A-Z0-9-]{3,}/g) ?? [];
+  const materialBySku = new Map(
+    materials
+      .map((material) => [normalizeSkuToken(material.sku), material] as const)
+      .filter(([sku]) => sku.length > 0)
+  );
+  const skuTokens = extractSkuTokens(line);
 
   for (const token of skuTokens) {
-    const skuMatch = materials.find((material) => material.sku.toUpperCase() === token);
+    const skuMatch = materialBySku.get(token);
     if (skuMatch) {
       return skuMatch;
     }
@@ -113,18 +155,20 @@ function matchMaterial(line: string, materials: MaterialRecord[]) {
     }
   }
 
-  return bestScore > 0 ? bestMatch : null;
+  return bestScore >= 2 ? bestMatch : null;
 }
 
 function parseInvoiceText(rawText: string, materials: MaterialRecord[]) {
   const lines = rawText
     .split(/\r?\n/)
     .map((line) => line.trim())
-    .filter((line) => line.length > 0);
+    .filter((line) => line.length > 0)
+    .filter((line) => !isIgnoredInvoiceLine(line));
 
   return lines.map((line, index) => {
-    const matchedMaterial = matchMaterial(line, materials);
-    const quantity = parseQuantity(line);
+    const { quantity: leadingQuantity, remainingLine } = parseLeadingQuantity(line);
+    const quantity = leadingQuantity || parseQuantity(line);
+    const matchedMaterial = matchMaterial(remainingLine, materials);
 
     return {
       id: `row-${index}`,
