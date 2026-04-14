@@ -33,6 +33,7 @@ type CreateMaterialDraft = {
 };
 
 const quantityPattern = /(?:^|\s)(\d+(?:\.\d+)?)(?:\s|$)/;
+const cleanLineIgnorePattern = /\b(?:handling|tax|freight|total|subtotal)\b/i;
 
 function normalizeText(value: string) {
   return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
@@ -141,6 +142,16 @@ function parseInvoiceText(rawText: string, materials: MaterialRecord[]) {
   });
 }
 
+function buildCleanLines(rawText: string) {
+  return rawText
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .filter((line) => !cleanLineIgnorePattern.test(line))
+    .map((line) => line.replace(/\s+/g, ' '))
+    .join('\n');
+}
+
 export function InvoiceImportReceiveForm({ materials, jobs }: { materials: MaterialRecord[]; jobs: JobRecord[] }) {
   const [invoiceText, setInvoiceText] = useState('');
   const [rows, setRows] = useState<ParsedRow[]>([]);
@@ -151,6 +162,8 @@ export function InvoiceImportReceiveForm({ materials, jobs }: { materials: Mater
   const [isCreatingMaterial, startCreateTransition] = useTransition();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [cleanCopyText, setCleanCopyText] = useState('');
+  const [copyMessage, setCopyMessage] = useState<string | null>(null);
 
   const openJobs = useMemo(() => jobs.filter((job) => job.status === 'OPEN'), [jobs]);
 
@@ -174,6 +187,22 @@ export function InvoiceImportReceiveForm({ materials, jobs }: { materials: Mater
       minStockInput: '',
       notes: `Created from invoice line: ${row.originalLine}`
     });
+  }
+
+  async function copyCleanLines(cleanText: string) {
+    if (!cleanText.trim()) {
+      return;
+    }
+
+    await navigator.clipboard.writeText(cleanText);
+    setCopyMessage('Clean lines copied to clipboard');
+  }
+
+  async function handleGenerateCleanLines() {
+    const nextCleanText = buildCleanLines(invoiceText);
+    setCleanCopyText(nextCleanText);
+    setCopyMessage(null);
+    await copyCleanLines(nextCleanText);
   }
 
   const confirmedRows = rows.filter((row) => row.confirmed);
@@ -223,10 +252,25 @@ export function InvoiceImportReceiveForm({ materials, jobs }: { materials: Mater
         <button type="button" onClick={handleParse}>
           Parse Invoice
         </button>
+        <button type="button" className="secondary-button" onClick={() => void handleGenerateCleanLines()}>
+          Generate Clean Lines
+        </button>
+        <button type="button" className="secondary-button" onClick={() => void copyCleanLines(cleanCopyText)}>
+          Copy Clean Lines
+        </button>
         <button type="submit" disabled={isSubmitting}>
           {isSubmitting ? 'Posting...' : `Post ${confirmedRows.length} Confirmed Row(s)`}
         </button>
       </div>
+      <label htmlFor="cleanCopyText">Clean Copy (ready to paste)</label>
+      <textarea
+        id="cleanCopyText"
+        rows={6}
+        value={cleanCopyText}
+        onChange={(event) => setCleanCopyText(event.target.value)}
+        placeholder="Clean lines will appear here..."
+      />
+      {copyMessage ? <p style={{ color: '#067647', marginBottom: '0.75rem' }}>{copyMessage}</p> : null}
 
       <input type="hidden" name="rowsPayload" />
 
