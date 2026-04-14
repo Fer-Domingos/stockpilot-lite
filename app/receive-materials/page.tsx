@@ -52,8 +52,8 @@ export default async function ReceiveMaterialsPage({
 
       <section className="card">
         <div className="section-title">
-          <h3>Import from Invoice Text</h3>
-          <p className="muted">Paste raw invoice text, review mapped lines, and confirm destination and quantity before posting.</p>
+          <h3>Import from Invoice PDF</h3>
+          <p className="muted">Upload invoice PDF, auto-prepare receiving lines, then review and confirm before posting.</p>
         </div>
         {canPostReceipts ? (
           <InvoiceImportReceiveForm materials={materials} jobs={openJobs} />
