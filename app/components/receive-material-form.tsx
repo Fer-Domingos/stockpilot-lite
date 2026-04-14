@@ -67,7 +67,7 @@ export function ReceiveMaterialForm({ materials, jobs }: { materials: MaterialRe
       <div style={{ border: '1px solid #eaecf0', borderRadius: '0.75rem', padding: '0.75rem', marginBottom: '1rem' }}>
         <h4 style={{ marginTop: 0, marginBottom: '0.5rem' }}>Upload Invoice File</h4>
         <p className="muted" style={{ marginTop: 0 }}>
-          Upload a PDF or image invoice and attach it to this receipt.
+          Upload a PDF or image invoice and attach it to this receipt only (no auto-parse).
         </p>
 
         <label htmlFor="invoiceFile">Invoice File</label>
