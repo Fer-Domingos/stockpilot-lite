@@ -401,6 +401,37 @@ form {
   gap: 8px;
 }
 
+.import-actions {
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.import-actions input[type="file"] {
+  max-width: 320px;
+  width: auto;
+}
+
+.import-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #334155;
+}
+
+.import-checkbox input[type="checkbox"] {
+  width: auto;
+  padding: 0;
+}
+
+.import-preview-table {
+  margin-top: 12px;
+}
+
+.import-summary {
+  margin: 10px 0;
+}
+
 .jobs-filter-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(140px, 180px);
