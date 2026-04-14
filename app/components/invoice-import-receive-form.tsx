@@ -13,6 +13,7 @@ type DestinationType = 'SHOP' | 'JOB';
 
 type ParsedRow = {
   id: string;
+  rawLine: string;
   originalLine: string;
   quantity: string;
   unit: string;
@@ -33,13 +34,35 @@ type CreateMaterialDraft = {
 };
 
 const quantityPattern = /(?:^|\s)(\d+(?:\.\d+)?)(?:\s|$)/;
+const leadingQuantityPattern = /^\s*(\d+(?:\.\d+)?)\b/;
+const ignoredLinePattern =
+  /\b(?:handling|freight|delivery|tax|subtotal|total|discount)\b/i;
+const trailingNoisePattern =
+  /\b\d+(?:\.\d+)?\s*(?:ea|each|usd)?\b|\b(?:ea|each|usd)\b|[$,]/gi;
+const tokenPattern = /[a-z0-9]+/gi;
+const stopWords = new Set([
+  'mm',
+  'in',
+  'x',
+  'by',
+  'and',
+  'for',
+  'with',
+  'the',
+  'sheet',
+  'sheets',
+  'unit',
+  'units',
+  'ea',
+  'each'
+]);
 
 function normalizeText(value: string) {
   return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
 function parseQuantity(line: string) {
-  const match = line.match(quantityPattern);
+  const match = line.match(leadingQuantityPattern) ?? line.match(quantityPattern);
   if (!match) {
     return '';
   }
@@ -65,23 +88,49 @@ function parseUnit(line: string, fallback: string) {
   return fallback;
 }
 
-function buildSuggestedMaterialName(line: string) {
-  const withoutQty = line.replace(quantityPattern, ' ');
-  const withoutDecorators = withoutQty
-    .replace(/\b(?:ea|each|unit|units|sheet|sheets|pcs|pc|x)\b/gi, ' ')
+function cleanInvoiceDescription(line: string) {
+  const withoutLeadingQuantity = line.replace(leadingQuantityPattern, '').trim();
+  const withoutTrailingNoise = withoutLeadingQuantity
+    .replace(/\$?\d[\d,.]*(?:\.\d+)?\s*(?:ea|each|usd)?\s*$/gi, ' ')
+    .replace(/(?:\s+\$?\d[\d,.]*(?:\.\d+)?){1,3}\s*$/gi, ' ')
+    .replace(trailingNoisePattern, ' ')
+    .replace(/\b(?:pcs|pc)\b/gi, ' ')
     .replace(/[()\[\],]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 
-  if (!withoutDecorators) {
+  if (!withoutTrailingNoise) {
     return line.trim();
   }
 
-  return withoutDecorators;
+  return withoutTrailingNoise;
 }
 
-function matchMaterial(line: string, materials: MaterialRecord[]) {
-  const skuTokens = line.toUpperCase().match(/[A-Z0-9-]{3,}/g) ?? [];
+function buildSuggestedMaterialName(line: string) {
+  return cleanInvoiceDescription(line);
+}
+
+function extractMeaningfulTokens(value: string) {
+  const tokens = value.toLowerCase().match(tokenPattern) ?? [];
+  return Array.from(
+    new Set(
+      tokens.filter((token) => {
+        if (stopWords.has(token)) {
+          return false;
+        }
+
+        if (token.length >= 3) {
+          return true;
+        }
+
+        return /\d/.test(token) && token.length >= 2;
+      })
+    )
+  );
+}
+
+function matchMaterial(description: string, materials: MaterialRecord[]) {
+  const skuTokens = description.toUpperCase().match(/[A-Z0-9-]{3,}/g) ?? [];
 
   for (const token of skuTokens) {
     const skuMatch = materials.find((material) => material.sku.toUpperCase() === token);
@@ -90,13 +139,19 @@ function matchMaterial(line: string, materials: MaterialRecord[]) {
     }
   }
 
-  const normalizedLine = normalizeText(line);
+  const normalizedLine = normalizeText(description);
   if (!normalizedLine) {
+    return null;
+  }
+
+  const lineTokens = extractMeaningfulTokens(description);
+  if (lineTokens.length === 0) {
     return null;
   }
 
   let bestMatch: MaterialRecord | null = null;
   let bestScore = 0;
+  let bestCoverage = 0;
 
   for (const material of materials) {
     const normalizedName = normalizeText(material.name);
@@ -104,16 +159,28 @@ function matchMaterial(line: string, materials: MaterialRecord[]) {
       continue;
     }
 
-    const nameTokens = normalizedName.split(' ').filter(Boolean);
-    const score = nameTokens.filter((token) => normalizedLine.includes(token)).length;
+    const nameTokens = extractMeaningfulTokens(`${material.name} ${material.sku}`);
+    if (nameTokens.length === 0) {
+      continue;
+    }
 
-    if (score > bestScore) {
+    const matchedTokens = lineTokens.filter((token) => nameTokens.includes(token));
+    const score = matchedTokens.length;
+    const coverage = score / Math.max(lineTokens.length, 1);
+
+    if (score > bestScore || (score === bestScore && coverage > bestCoverage)) {
       bestScore = score;
+      bestCoverage = coverage;
       bestMatch = material;
     }
   }
 
-  return bestScore > 0 ? bestMatch : null;
+  const isStrongMatch = bestScore >= 2 || bestCoverage >= 0.6;
+  return isStrongMatch ? bestMatch : null;
+}
+
+function shouldIgnoreLine(line: string) {
+  return ignoredLinePattern.test(line.toLowerCase());
 }
 
 function parseInvoiceText(rawText: string, materials: MaterialRecord[]) {
@@ -122,23 +189,27 @@ function parseInvoiceText(rawText: string, materials: MaterialRecord[]) {
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
 
-  return lines.map((line, index) => {
-    const matchedMaterial = matchMaterial(line, materials);
-    const quantity = parseQuantity(line);
+  return lines
+    .filter((line) => !shouldIgnoreLine(line))
+    .map((line, index) => {
+      const cleanedDescription = cleanInvoiceDescription(line);
+      const matchedMaterial = matchMaterial(cleanedDescription, materials);
+      const quantity = parseQuantity(line);
 
-    return {
-      id: `row-${index}`,
-      originalLine: line,
-      quantity,
-      unit: parseUnit(line, matchedMaterial?.unit ?? 'UNIT'),
-      materialId: matchedMaterial?.id ?? null,
-      destinationType: 'SHOP' as const,
-      jobId: '',
-      invoiceNumber: '',
-      vendorName: '',
-      confirmed: Boolean(matchedMaterial && quantity)
-    };
-  });
+      return {
+        id: `row-${index}`,
+        rawLine: line,
+        originalLine: cleanedDescription,
+        quantity,
+        unit: parseUnit(cleanedDescription, matchedMaterial?.unit ?? 'UNIT'),
+        materialId: matchedMaterial?.id ?? null,
+        destinationType: 'SHOP' as const,
+        jobId: '',
+        invoiceNumber: '',
+        vendorName: '',
+        confirmed: Boolean(matchedMaterial && quantity)
+      };
+    });
 }
 
 export function InvoiceImportReceiveForm({ materials, jobs }: { materials: MaterialRecord[]; jobs: JobRecord[] }) {
@@ -172,7 +243,7 @@ export function InvoiceImportReceiveForm({ materials, jobs }: { materials: Mater
       sku: '',
       unit: row.unit,
       minStockInput: '',
-      notes: `Created from invoice line: ${row.originalLine}`
+      notes: `Created from invoice line: ${row.rawLine}`
     });
   }
 
@@ -261,7 +332,14 @@ export function InvoiceImportReceiveForm({ materials, jobs }: { materials: Mater
                       }
                     />
                   </td>
-                  <td>{row.originalLine}</td>
+                  <td>
+                    <div>{row.originalLine}</div>
+                    {row.rawLine !== row.originalLine ? (
+                      <div className="muted" style={{ fontSize: '0.75rem' }}>
+                        Raw: {row.rawLine}
+                      </div>
+                    ) : null}
+                  </td>
                   <td>
                     {row.materialId ? (
                       <select
