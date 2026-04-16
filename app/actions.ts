@@ -996,14 +996,28 @@ export async function createMaterial(
     };
   }
 
-  const validation = validateMaterialPayload(payload);
+  const normalizedName = String(payload.name ?? "").trim();
+  const providedSku = String(payload.sku ?? "").trim();
+  const normalizedUnit = String(payload.unit ?? "").trim().toUpperCase();
+  const normalizedNotes = String(payload.notes ?? "").trim();
+  const minimumStock = payload.minStock as number | "" | null | undefined;
+
+  const normalizedPayload: MaterialPayload = {
+    name: normalizedName,
+    sku: providedSku || buildInvoiceImportSku(normalizedName),
+    unit: normalizedUnit,
+    minStock: minimumStock === "" || minimumStock == null ? 0 : Number(minimumStock),
+    notes: normalizedNotes,
+  };
+
+  const validation = validateMaterialPayload(normalizedPayload);
   if (!validation.ok) {
     return validation;
   }
 
   try {
     const created = await prisma.material.create({
-      data: normalizeMaterialPayload(payload),
+      data: normalizeMaterialPayload(normalizedPayload),
       select: {
         id: true,
         name: true,
@@ -1030,6 +1044,10 @@ export async function createMaterial(
     };
   } catch (error) {
     console.error("Failed to create material:", error);
+    if (error instanceof Error && error.message.trim()) {
+      return { ok: false, error: error.message };
+    }
+
     return { ok: false, error: formatMaterialMutationError(error) };
   }
 }
