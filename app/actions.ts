@@ -1988,20 +1988,48 @@ export async function receiveMaterial(formData: FormData) {
         },
       );
 
-      const receipt = await tx.receivingRecord.create({
-        data: {
-          materialId,
-          quantity: normalizedQuantity,
-          destinationType,
-          jobId: destinationJobId,
-          invoiceNumber: invoiceNumber || null,
-          vendor: vendor || null,
-          notes: notes || null,
-          photoUrl: photoUrl || null,
-          invoiceFileUrl: invoiceFileUrl || null,
-          receivedAt,
-        },
-      });
+      const receiptData = {
+        materialId,
+        quantity: normalizedQuantity,
+        destinationType,
+        jobId: destinationJobId,
+        invoiceNumber: invoiceNumber || null,
+        vendor: vendor || null,
+        notes: notes || null,
+        photoUrl: photoUrl || null,
+        invoiceFileUrl: invoiceFileUrl || null,
+        receivedAt,
+      };
+
+      let receipt;
+      try {
+        receipt = await tx.receivingRecord.create({
+          data: receiptData,
+        });
+      } catch (error) {
+        const missingInvoiceFileColumn =
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === "P2022" &&
+          String(error.meta?.column ?? "").includes("invoiceFileUrl");
+
+        if (!missingInvoiceFileColumn) {
+          throw error;
+        }
+
+        receipt = await tx.receivingRecord.create({
+          data: {
+            materialId,
+            quantity: normalizedQuantity,
+            destinationType,
+            jobId: destinationJobId,
+            invoiceNumber: invoiceNumber || null,
+            vendor: vendor || null,
+            notes: notes || null,
+            photoUrl: photoUrl || null,
+            receivedAt,
+          },
+        });
+      }
 
       const matchedExpectedPo = await tx.expectedPurchaseOrder.findUnique({
         where: {
