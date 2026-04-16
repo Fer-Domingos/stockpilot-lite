@@ -442,9 +442,11 @@ function normalizeMaterialUnit(unit: string): string {
 }
 
 function normalizeMaterialPayload(payload: MaterialPayload): MaterialPayload {
+  const normalizedSku = payload.sku.trim();
+
   return {
     name: payload.name.trim(),
-    sku: payload.sku.trim(),
+    sku: normalizedSku || `MAT-${Date.now().toString(36).toUpperCase()}`,
     unit: normalizeMaterialUnit(payload.unit),
     minStock:
       payload.minStock === null ? null : Math.max(0, Math.floor(payload.minStock)),
@@ -675,10 +677,6 @@ function validateMaterialPayload(
 ): ActionResult<MaterialRecord> {
   if (!payload.name.trim()) {
     return { ok: false, error: "Material name is required." };
-  }
-
-  if (!payload.sku.trim()) {
-    return { ok: false, error: "SKU is required." };
   }
 
   if (!payload.unit.trim()) {
@@ -1029,8 +1027,8 @@ export async function createMaterial(
       },
     };
   } catch (error) {
-    console.error("Failed to create material:", error);
-    return { ok: false, error: formatMaterialMutationError(error) };
+    console.error("Create material error:", error);
+    return { ok: false, error: "Failed to create material" };
   }
 }
 

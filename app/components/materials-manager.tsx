@@ -210,7 +210,7 @@ export function MaterialsManager({
                 } else {
                   const result = await createMaterial(normalizedForm);
                   if (!result.ok) {
-                    setError(result.error ?? 'Failed to create material.');
+                    setError(result.error ?? '');
                     return;
                   }
 
@@ -239,7 +239,6 @@ export function MaterialsManager({
               id="sku"
               value={form.sku}
               onChange={(event) => setForm((current) => ({ ...current, sku: event.target.value }))}
-              required
             />
 
             <label htmlFor="unit">Unit</label>
