@@ -494,16 +494,18 @@ function allocateBulkImportSku(
   return candidate;
 }
 
-function parseImportMinStock(value: string): { value: number | null; error: string | null } {
-  const raw = value.trim();
+function parseImportMinStock(
+  value: string | null | undefined,
+): { value: number; error: string | null } {
+  const raw = value?.trim() ?? "";
   if (!raw) {
-    return { value: null, error: null };
+    return { value: 0, error: null };
   }
 
   const parsed = Number(raw);
   if (!Number.isFinite(parsed) || parsed < 0) {
     return {
-      value: null,
+      value: 0,
       error: "Minimum stock must be a non-negative number.",
     };
   }
