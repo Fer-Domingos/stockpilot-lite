@@ -185,8 +185,62 @@ function parseInvoiceText(rawText: string, materials: MaterialRecord[]) {
   });
 }
 
+const skipInvoiceLinePattern =
+  /\b(?:subtotal|total|tax|handling|freight|shipping|delivery|balance|amount\s+due|invoice\s+total)\b/i;
+
+function buildCleanInvoiceLine(line: string) {
+  if (!line.trim() || skipInvoiceLinePattern.test(line)) {
+    return null;
+  }
+
+  const rawTokens = line
+    .replace(/\t/g, ' ')
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter(Boolean);
+
+  if (rawTokens.length === 0) {
+    return null;
+  }
+
+  let tokens = [...rawTokens];
+  if (/^\d+$/.test(tokens[0]) && tokens.length > 1) {
+    tokens = tokens.slice(1);
+  }
+
+  const quantityIndex = tokens.findIndex((token) => /^\d+$/.test(token));
+  if (quantityIndex === -1) {
+    return null;
+  }
+
+  const quantity = tokens[quantityIndex];
+
+  const descriptionTokens = tokens
+    .filter((_, index) => index !== quantityIndex)
+    .map((token) => token.replace(/^[,.;:()]+|[,.;:()]+$/g, ''))
+    .map((token) => token.replace(/[$,]/g, ''))
+    .filter((token) => token.length > 0)
+    .filter((token) => !/^ea$/i.test(token))
+    .filter((token) => !/^\d+\.\d{2}$/.test(token))
+    .filter((token) => !skipInvoiceLinePattern.test(token));
+
+  if (descriptionTokens.length === 0) {
+    return null;
+  }
+
+  return `${quantity} ${descriptionTokens.join(' ')}`;
+}
+
+function extractCleanInvoiceLines(rawText: string) {
+  return rawText
+    .split(/\r?\n/)
+    .map((line) => buildCleanInvoiceLine(line))
+    .filter((line): line is string => Boolean(line));
+}
+
 export function InvoiceImportReceiveForm({ materials, jobs }: { materials: MaterialRecord[]; jobs: JobRecord[] }) {
   const [invoiceText, setInvoiceText] = useState('');
+  const [cleanLinesPreview, setCleanLinesPreview] = useState('');
   const [rows, setRows] = useState<ParsedRow[]>([]);
   const [availableMaterials, setAvailableMaterials] = useState<MaterialRecord[]>(materials);
   const [activeCreateRowId, setActiveCreateRowId] = useState<string | null>(null);
@@ -195,6 +249,7 @@ export function InvoiceImportReceiveForm({ materials, jobs }: { materials: Mater
   const [isCreatingMaterial, startCreateTransition] = useTransition();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [copyStatus, setCopyStatus] = useState<string | null>(null);
 
   const openJobs = useMemo(() => jobs.filter((job) => job.status === 'OPEN'), [jobs]);
 
@@ -202,6 +257,24 @@ export function InvoiceImportReceiveForm({ materials, jobs }: { materials: Mater
     const parsedRows = parseInvoiceText(invoiceText, availableMaterials);
     setRows(parsedRows);
     setError(null);
+  }
+
+  async function handleCopyCleanLines() {
+    const cleanLines = extractCleanInvoiceLines(invoiceText);
+    const output = cleanLines.join('\n');
+    setCleanLinesPreview(output);
+
+    if (!output) {
+      setCopyStatus('No clean material lines found.');
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(output);
+      setCopyStatus(`Copied ${cleanLines.length} clean line(s) to clipboard.`);
+    } catch {
+      setCopyStatus('Unable to copy automatically. You can still copy from the preview box.');
+    }
   }
 
   function updateRow(id: string, updater: (row: ParsedRow) => ParsedRow) {
@@ -267,6 +340,9 @@ export function InvoiceImportReceiveForm({ materials, jobs }: { materials: Mater
         <button type="button" onClick={handleParse}>
           Parse Invoice
         </button>
+        <button type="button" className="secondary-button" onClick={handleCopyCleanLines}>
+          Copy Clean Lines
+        </button>
         <button type="submit" disabled={isSubmitting}>
           {isSubmitting ? 'Posting...' : `Post ${confirmedRows.length} Confirmed Row(s)`}
         </button>
@@ -275,6 +351,16 @@ export function InvoiceImportReceiveForm({ materials, jobs }: { materials: Mater
       <input type="hidden" name="rowsPayload" />
 
       {error ? <p style={{ color: '#b42318', marginBottom: '0.75rem' }}>{error}</p> : null}
+      {copyStatus ? <p className="muted">{copyStatus}</p> : null}
+
+      <label htmlFor="cleanLinesPreview">Clean Lines Preview</label>
+      <textarea
+        id="cleanLinesPreview"
+        rows={6}
+        value={cleanLinesPreview}
+        readOnly
+        placeholder="Click “Copy Clean Lines” to generate clean copy-ready lines."
+      />
 
       {rows.length > 0 ? (
         <table>
