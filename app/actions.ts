@@ -1001,9 +1001,18 @@ export async function createMaterial(
     return validation;
   }
 
+  const normalizedPayload = normalizeMaterialPayload(payload);
+  console.log("Incoming material data:", {
+    name: normalizedPayload.name,
+    sku: normalizedPayload.sku,
+    unit: normalizedPayload.unit,
+    minStock: normalizedPayload.minStock,
+    notes: normalizedPayload.notes,
+  });
+
   try {
     const created = await prisma.material.create({
-      data: normalizeMaterialPayload(payload),
+      data: normalizedPayload,
       select: {
         id: true,
         name: true,
@@ -1014,6 +1023,7 @@ export async function createMaterial(
         notes: true,
       },
     });
+    console.log("Material created:", created);
     revalidatePath("/materials");
 
     return {
@@ -1029,8 +1039,11 @@ export async function createMaterial(
       },
     };
   } catch (error) {
-    console.error("Failed to create material:", error);
-    return { ok: false, error: formatMaterialMutationError(error) };
+    console.error("CREATE MATERIAL ERROR:", error);
+    const fallback = formatMaterialMutationError(error);
+    const detailed = error instanceof Error ? error.message : null;
+
+    return { ok: false, error: detailed || fallback };
   }
 }
 
