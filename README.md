@@ -75,3 +75,34 @@ Recommended Vercel setup:
 - Set `DATABASE_URL` for runtime queries.
 - Set `DIRECT_URL` for migration commands such as `prisma migrate deploy`.
 - Only run `npm run prisma:migrate:deploy` for releases that actually include new migration files in `prisma/migrations/`.
+
+## CMD environment bootstrap (safe production workflow)
+
+Use this for a brand-new database (for example the `stockpilot-cmd` Neon project) without touching your existing `stockpilot-lite` database.
+
+1. Set shell env vars to the **CMD** database only:
+   ```bash
+   export DATABASE_URL='postgresql://...stockpilot-cmd...'
+   export DIRECT_URL='postgresql://...stockpilot-cmd...'
+   ```
+2. Apply all committed migrations (non-destructive):
+   ```bash
+   npm run prisma:migrate:deploy
+   ```
+3. Verify migration status:
+   ```bash
+   npx prisma migrate status
+   ```
+4. Create the first admin user (one-time bootstrap guard):
+   ```bash
+   export CMD_DATABASE_GUARD='stockpilot-cmd'
+   export ADMIN_EMAIL='admin@your-company.com'
+   export ADMIN_PASSWORD='a-very-strong-password'
+   export ADMIN_NAME='StockPilot CMD Admin'
+   npm run admin:create:initial
+   ```
+
+Notes:
+- `admin:create:initial` refuses to run if `DATABASE_URL` does not contain `CMD_DATABASE_GUARD`.
+- `admin:create:initial` refuses to run if an admin user already exists.
+- No reset command is used in this workflow.
