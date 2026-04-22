@@ -186,6 +186,9 @@ function parseInvoiceText(rawText: string, materials: MaterialRecord[]) {
 }
 
 export function InvoiceImportReceiveForm({ materials, jobs }: { materials: MaterialRecord[]; jobs: JobRecord[] }) {
+  const [selectedInvoiceFile, setSelectedInvoiceFile] = useState<File | null>(null);
+  const [uploadedInvoiceUrl, setUploadedInvoiceUrl] = useState<string>('');
+  const [isExtracting, setIsExtracting] = useState(false);
   const [invoiceText, setInvoiceText] = useState('');
   const [rows, setRows] = useState<ParsedRow[]>([]);
   const [availableMaterials, setAvailableMaterials] = useState<MaterialRecord[]>(materials);
@@ -197,6 +200,62 @@ export function InvoiceImportReceiveForm({ materials, jobs }: { materials: Mater
   const [error, setError] = useState<string | null>(null);
 
   const openJobs = useMemo(() => jobs.filter((job) => job.status === 'OPEN'), [jobs]);
+
+  async function handleUploadAndExtract() {
+    if (!selectedInvoiceFile) {
+      setError('Select an invoice PDF or image first.');
+      return;
+    }
+
+    setError(null);
+    setIsExtracting(true);
+
+    try {
+      const uploadFormData = new FormData();
+      uploadFormData.append('file', selectedInvoiceFile);
+
+      const uploadResponse = await fetch('/api/invoices/upload', {
+        method: 'POST',
+        body: uploadFormData
+      });
+      const uploadPayload = (await uploadResponse.json()) as { url?: string; error?: string };
+
+      if (!uploadResponse.ok || !uploadPayload.url) {
+        throw new Error(uploadPayload.error || 'Unable to upload invoice file.');
+      }
+
+      setUploadedInvoiceUrl(uploadPayload.url);
+
+      const extractResponse = await fetch('/api/invoices/extract', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify({ url: uploadPayload.url })
+      });
+      const extractPayload = (await extractResponse.json()) as {
+        text?: string;
+        strategy?: string;
+        error?: string;
+      };
+
+      if (!extractResponse.ok) {
+        throw new Error(extractPayload.error || 'Unable to extract invoice text.');
+      }
+
+      const extractedText = extractPayload.text?.trim() ?? '';
+      if (!extractedText) {
+        throw new Error('No readable text was detected in this invoice.');
+      }
+
+      setInvoiceText(extractedText);
+      setRows([]);
+    } catch (extractError) {
+      setError(extractError instanceof Error ? extractError.message : 'Unable to extract invoice text.');
+    } finally {
+      setIsExtracting(false);
+    }
+  }
 
   function handleParse() {
     const parsedRows = parseInvoiceText(invoiceText, availableMaterials);
@@ -254,6 +313,25 @@ export function InvoiceImportReceiveForm({ materials, jobs }: { materials: Mater
         setIsSubmitting(true);
       }}
     >
+      <label htmlFor="invoiceFileUpload">Upload Invoice PDF/Image (auto extract)</label>
+      <input
+        id="invoiceFileUpload"
+        type="file"
+        accept=".pdf,.jpg,.jpeg,.png"
+        onChange={(event) => setSelectedInvoiceFile(event.target.files?.[0] ?? null)}
+      />
+      <div style={{ marginTop: '0.5rem', marginBottom: '0.75rem' }}>
+        <button type="button" onClick={handleUploadAndExtract} disabled={isExtracting}>
+          {isExtracting ? 'Extracting...' : 'Upload & Extract Text'}
+        </button>
+      </div>
+
+      {uploadedInvoiceUrl ? (
+        <p className="muted" style={{ marginTop: 0 }}>
+          Extracting from: <a href={uploadedInvoiceUrl} target="_blank" rel="noreferrer">Uploaded invoice</a>
+        </p>
+      ) : null}
+
       <label htmlFor="invoiceText">Paste Invoice Text</label>
       <textarea
         id="invoiceText"
