@@ -187,6 +187,8 @@ function parseInvoiceText(rawText: string, materials: MaterialRecord[]) {
 
 export function InvoiceImportReceiveForm({ materials, jobs }: { materials: MaterialRecord[]; jobs: JobRecord[] }) {
   const [invoiceText, setInvoiceText] = useState('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [isExtracting, setIsExtracting] = useState(false);
   const [rows, setRows] = useState<ParsedRow[]>([]);
   const [availableMaterials, setAvailableMaterials] = useState<MaterialRecord[]>(materials);
   const [activeCreateRowId, setActiveCreateRowId] = useState<string | null>(null);
@@ -206,6 +208,38 @@ export function InvoiceImportReceiveForm({ materials, jobs }: { materials: Mater
 
   function updateRow(id: string, updater: (row: ParsedRow) => ParsedRow) {
     setRows((currentRows) => currentRows.map((row) => (row.id === id ? updater(row) : row)));
+  }
+
+  async function handleExtractTextFromFile() {
+    if (!selectedFile) {
+      setError('Select a file before extracting text.');
+      return;
+    }
+
+    setError(null);
+    setIsExtracting(true);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+
+      const res = await fetch('/api/invoices/extract-text', {
+        method: 'POST',
+        body: formData
+      });
+
+      const data = (await res.json()) as { text?: string; error?: string };
+
+      if (res.ok) {
+        setInvoiceText(data.text ?? '');
+      } else {
+        setError(data.error || 'Failed to extract text');
+      }
+    } catch {
+      setError('Failed to extract text');
+    } finally {
+      setIsExtracting(false);
+    }
   }
 
   function openCreateMaterial(row: ParsedRow) {
@@ -255,6 +289,18 @@ export function InvoiceImportReceiveForm({ materials, jobs }: { materials: Mater
       }}
     >
       <label htmlFor="invoiceText">Paste Invoice Text</label>
+      <label htmlFor="invoiceExtractFile">Upload Invoice File</label>
+      <input
+        id="invoiceExtractFile"
+        type="file"
+        accept=".pdf,.jpg,.jpeg,.png"
+        onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)}
+      />
+
+      <button type="button" onClick={handleExtractTextFromFile} disabled={isExtracting}>
+        {isExtracting ? 'Extracting...' : 'Upload and Extract Text'}
+      </button>
+
       <textarea
         id="invoiceText"
         rows={8}
