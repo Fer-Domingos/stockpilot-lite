@@ -13,6 +13,17 @@ function sanitizeFileName(name: string) {
   return name.replace(/[^a-zA-Z0-9._-]/g, '_');
 }
 
+async function extractPdfText(uploadedFile: Blob) {
+  const dynamicImport = new Function('modulePath', 'return import(modulePath);') as (
+    modulePath: string
+  ) => Promise<{ default: (dataBuffer: Buffer) => Promise<{ text: string }> }>;
+  const pdfParseModule = await dynamicImport('pdf-parse/lib/pdf-parse.js');
+  const pdfParse = pdfParseModule.default;
+  const dataBuffer = Buffer.from(await uploadedFile.arrayBuffer());
+  const parsed = await pdfParse(dataBuffer);
+  return parsed.text.trim();
+}
+
 export async function POST(request: Request) {
   try {
     const formData = await request.formData();
@@ -54,9 +65,19 @@ export async function POST(request: Request) {
       addRandomSuffix: false
     });
 
+    let extractedText = '';
+    if (extension === '.pdf') {
+      try {
+        extractedText = await extractPdfText(uploadedFile);
+      } catch (error) {
+        console.error('Failed to extract PDF text:', error);
+      }
+    }
+
     return NextResponse.json({
       fileName: finalFileName,
-      url: blob.url
+      url: blob.url,
+      extractedText
     });
   } catch (error) {
     console.error('Failed to upload invoice file:', error);
