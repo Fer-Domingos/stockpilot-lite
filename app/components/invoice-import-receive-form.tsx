@@ -186,7 +186,12 @@ function parseInvoiceText(rawText: string, materials: MaterialRecord[]) {
 }
 
 export function InvoiceImportReceiveForm({ materials, jobs }: { materials: MaterialRecord[]; jobs: JobRecord[] }) {
+  const scannedPdfMessage =
+    'This PDF appears to be scanned (image-based). Please paste the invoice text manually or upload a text-based PDF.';
   const [invoiceText, setInvoiceText] = useState('');
+  const [selectedPdf, setSelectedPdf] = useState<File | null>(null);
+  const [extractMessage, setExtractMessage] = useState<string | null>(null);
+  const [isExtracting, setIsExtracting] = useState(false);
   const [rows, setRows] = useState<ParsedRow[]>([]);
   const [availableMaterials, setAvailableMaterials] = useState<MaterialRecord[]>(materials);
   const [activeCreateRowId, setActiveCreateRowId] = useState<string | null>(null);
@@ -202,6 +207,47 @@ export function InvoiceImportReceiveForm({ materials, jobs }: { materials: Mater
     const parsedRows = parseInvoiceText(invoiceText, availableMaterials);
     setRows(parsedRows);
     setError(null);
+  }
+
+  async function handleExtractText() {
+    if (!selectedPdf) {
+      setExtractMessage('Please choose a PDF file first.');
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', selectedPdf);
+
+    setIsExtracting(true);
+    setExtractMessage('Extracting text from PDF...');
+
+    try {
+      const response = await fetch('/api/invoices/extract-text', {
+        method: 'POST',
+        body: formData
+      });
+
+      const payload = (await response.json()) as { text?: string; error?: string };
+
+      if (!response.ok || !payload.text) {
+        if (payload.error === 'No text could be extracted from this PDF.') {
+          setExtractMessage(scannedPdfMessage);
+        } else {
+          setExtractMessage(payload.error ?? 'Unable to extract text from this PDF.');
+        }
+        return;
+      }
+
+      setInvoiceText(payload.text);
+      setRows([]);
+      setError(null);
+      setExtractMessage('Text extracted. Review and edit as needed, then click Parse Invoice.');
+    } catch (extractError) {
+      console.error('Failed to extract PDF text:', extractError);
+      setExtractMessage('Unable to extract text from this PDF.');
+    } finally {
+      setIsExtracting(false);
+    }
   }
 
   function updateRow(id: string, updater: (row: ParsedRow) => ParsedRow) {
@@ -254,6 +300,23 @@ export function InvoiceImportReceiveForm({ materials, jobs }: { materials: Mater
         setIsSubmitting(true);
       }}
     >
+      <label htmlFor="receiveInvoicePdf">Invoice PDF (text-based)</label>
+      <input
+        id="receiveInvoicePdf"
+        type="file"
+        accept="application/pdf,.pdf"
+        onChange={(event) => {
+          setSelectedPdf(event.target.files?.[0] ?? null);
+          setExtractMessage(null);
+        }}
+      />
+
+      <button type="button" className="secondary-button" onClick={handleExtractText} disabled={!selectedPdf || isExtracting}>
+        {isExtracting ? 'Extracting...' : 'Upload and Extract Text'}
+      </button>
+
+      {extractMessage ? <p className="muted">{extractMessage}</p> : null}
+
       <label htmlFor="invoiceText">Paste Invoice Text</label>
       <textarea
         id="invoiceText"
