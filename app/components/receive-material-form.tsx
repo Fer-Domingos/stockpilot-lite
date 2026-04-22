@@ -54,7 +54,9 @@ export function ReceiveMaterialForm({ materials, jobs }: { materials: MaterialRe
         throw new Error(payload.error || 'Upload failed.');
       }
 
-      setUploadedInvoice({ fileName: payload.fileName, url: payload.url });
+      const uploaded = { fileName: payload.fileName, url: payload.url };
+      setUploadedInvoice(uploaded);
+      window.dispatchEvent(new CustomEvent('invoice-uploaded', { detail: uploaded }));
     } catch (error) {
       setUploadError(error instanceof Error ? error.message : 'Upload failed.');
     } finally {
@@ -80,7 +82,7 @@ export function ReceiveMaterialForm({ materials, jobs }: { materials: MaterialRe
         />
 
         <button type="button" onClick={handleInvoiceUpload} disabled={isUploading} style={{ marginTop: '0.5rem' }}>
-          {isUploading ? 'Uploading...' : 'Upload Invoice'}
+          {isUploading ? 'Uploading invoice...' : 'Upload Invoice'}
         </button>
 
         {uploadError ? <p style={{ color: '#b42318', marginTop: '0.5rem' }}>{uploadError}</p> : null}
