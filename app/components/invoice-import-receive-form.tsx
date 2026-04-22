@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useMemo, useState, useTransition } from 'react';
+import { Fragment, useEffect, useMemo, useState, useTransition } from 'react';
 
 import {
   JobRecord,
@@ -187,6 +187,8 @@ function parseInvoiceText(rawText: string, materials: MaterialRecord[]) {
 
 export function InvoiceImportReceiveForm({ materials, jobs }: { materials: MaterialRecord[]; jobs: JobRecord[] }) {
   const [invoiceText, setInvoiceText] = useState('');
+  const [importMessage, setImportMessage] = useState<string | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
   const [rows, setRows] = useState<ParsedRow[]>([]);
   const [availableMaterials, setAvailableMaterials] = useState<MaterialRecord[]>(materials);
   const [activeCreateRowId, setActiveCreateRowId] = useState<string | null>(null);
@@ -197,6 +199,29 @@ export function InvoiceImportReceiveForm({ materials, jobs }: { materials: Mater
   const [error, setError] = useState<string | null>(null);
 
   const openJobs = useMemo(() => jobs.filter((job) => job.status === 'OPEN'), [jobs]);
+
+  useEffect(() => {
+    function handleInvoiceTextUpdated(event: Event) {
+      const customEvent = event as CustomEvent<{ text?: string; error?: string }>;
+      const extractedText = customEvent.detail?.text?.trim();
+      const extractedError = customEvent.detail?.error;
+
+      if (extractedText) {
+        setInvoiceText(extractedText);
+        setImportError(null);
+        setImportMessage('Invoice text extracted from uploaded PDF. Review and click Parse Invoice.');
+        return;
+      }
+
+      if (extractedError) {
+        setImportMessage(null);
+        setImportError(extractedError);
+      }
+    }
+
+    window.addEventListener('invoice-text-updated', handleInvoiceTextUpdated);
+    return () => window.removeEventListener('invoice-text-updated', handleInvoiceTextUpdated);
+  }, []);
 
   function handleParse() {
     const parsedRows = parseInvoiceText(invoiceText, availableMaterials);
@@ -255,6 +280,8 @@ export function InvoiceImportReceiveForm({ materials, jobs }: { materials: Mater
       }}
     >
       <label htmlFor="invoiceText">Paste Invoice Text</label>
+      {importMessage ? <p style={{ color: '#027a48', marginBottom: '0.75rem' }}>{importMessage}</p> : null}
+      {importError ? <p style={{ color: '#b42318', marginBottom: '0.75rem' }}>{importError}</p> : null}
       <textarea
         id="invoiceText"
         rows={8}
